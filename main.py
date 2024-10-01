@@ -53,20 +53,26 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user.id not in interacted_users:
         interacted_users[user.id] = user.first_name  # Store user info
         save_interacted_users()  # Save the updated list to the file
-        # Notify the user of successful interaction
-        await query.message.reply_text(f"Дякую, {user.first_name}! Тепер вас згадуватимуть у наступних згадках.")
+
+        # Send confirmation and delete after 10 seconds
+        confirmation_message = await query.message.reply_text(f"Дякую, {user.first_name}! Тепер вас згадуватимуть у наступних згадках.", reply_to_message_id=query.message.message_id)
+        await asyncio.sleep(10)  # Wait 10 seconds
+        await context.bot.delete_message(chat_id=confirmation_message.chat_id, message_id=confirmation_message.message_id)
     else:
-        # Inform the user they have already interacted
-        await query.message.reply_text(f"{user.first_name}, ви вже взаємодіяли з ботом.")
+        # Inform the user they have already interacted and delete message after 10 seconds
+        already_interacted_message = await query.message.reply_text(f"{user.first_name}, ви вже взаємодіяли з ботом.", reply_to_message_id=query.message.message_id)
+        await asyncio.sleep(10)  # Wait 10 seconds
+        await context.bot.delete_message(chat_id=already_interacted_message.chat_id, message_id=already_interacted_message.message_id)
+
 
 # Welcome message for new users joining the chat
 async def welcome_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for user in update.message.new_chat_members:
         # Create the interaction button for the new user
-        keyboard = [[InlineKeyboardButton("Натисніть, щоб взаємодіяти", callback_data='interact')]]
+        keyboard = [[InlineKeyboardButton("Натисніть, щоб дозволити згадку", callback_data='interact')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Send a welcome message with the button
+        # Send a welcome message with the button and keep the button intact
         await update.message.reply_text(f"Ласкаво просимо, {user.first_name}! Натисніть кнопку нижче, щоб взаємодіяти з ботом.", reply_markup=reply_markup)
 
 # Command function to mention all users who interacted with the bot
@@ -83,7 +89,7 @@ async def mention_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Batch mentions and avoid hitting Telegram's flood control limits
     for i in range(0, len(user_list), 5):
-        mention_text = "Увага: " + ", ".join(user_list[i:i + 5])
+        mention_text = "Запрошую всіх до чату: " + ", ".join(user_list[i:i + 5])
         try:
             await update.message.reply_text(mention_text, parse_mode=ParseMode.MARKDOWN)
             await asyncio.sleep(1)  # Pause to avoid flood control
