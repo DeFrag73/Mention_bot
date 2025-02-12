@@ -11,6 +11,7 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 import os
 from dotenv import load_dotenv
+from Functions.Anti_spam.antispam_handlers import check_spam_decorator, admin_only
 
 # Налаштування логування
 logging.basicConfig(
@@ -80,7 +81,7 @@ ERROR_MESSAGES = {
     'group_format': "❌ Помилка: Номер групи має складатися з трьох цифр!"
 }
 
-
+@check_spam_decorator
 async def start_registration(update: Update, context: CallbackContext) -> int:
     logger.info(f"Користувач {update.effective_user.id} розпочав реєстрацію")
 
@@ -105,7 +106,7 @@ async def start_registration(update: Update, context: CallbackContext) -> int:
     )
     return NAME
 
-
+@check_spam_decorator
 async def get_name(update: Update, context: CallbackContext) -> int:
     user_input = update.message.text
     logger.info(f"Отримано ім'я від користувача {update.effective_user.id}: {user_input}")
@@ -137,7 +138,7 @@ async def get_name(update: Update, context: CallbackContext) -> int:
     await update.message.reply_text("Будь ласка, введіть ваше по батькові:")
     return PATRONYMIC
 
-
+@check_spam_decorator
 async def get_patronymic(update: Update, context: CallbackContext) -> int:
     user_input = update.message.text
     logger.info(f"Отримано по батькові від користувача {update.effective_user.id}: {user_input}")
@@ -172,7 +173,7 @@ async def get_patronymic(update: Update, context: CallbackContext) -> int:
     await update.message.reply_text("Будь ласка, введіть ваше прізвище:")
     return SURNAME
 
-
+@check_spam_decorator
 async def get_surname(update: Update, context: CallbackContext) -> int:
     user_input = update.message.text
     logger.info(f"Отримано прізвище від користувача {update.effective_user.id}: {user_input}")
@@ -207,7 +208,7 @@ async def get_surname(update: Update, context: CallbackContext) -> int:
     )
     return BIRTHDAY
 
-
+@check_spam_decorator
 async def get_birthday(update: Update, context: CallbackContext) -> int:
     user_input = update.message.text
     logger.info(f"Отримано дату народження від користувача {update.effective_user.id}: {user_input}")
@@ -265,7 +266,7 @@ async def get_birthday(update: Update, context: CallbackContext) -> int:
         await error_message.delete()
         return BIRTHDAY
 
-
+@check_spam_decorator
 async def get_group(update: Update, context: CallbackContext) -> int:
     user_input = update.message.text
     logger.info(f"Отримано групу від користувача {update.effective_user.id}: {user_input}")
@@ -337,7 +338,7 @@ async def get_group(update: Update, context: CallbackContext) -> int:
 
 
 
-
+@check_spam_decorator
 async def handle_employment_choice(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     await query.answer()
@@ -443,7 +444,7 @@ async def handle_employment_choice(update: Update, context: CallbackContext) -> 
         await query.message.reply_text("Сталася неочікувана помилка. Спробуйте пізніше.")
         return ConversationHandler.END
 
-
+@check_spam_decorator
 async def cancel(update: Update, context: CallbackContext) -> int:
     logger.info(f"Користувач {update.effective_user.id} скасував реєстрацію")
     await update.message.reply_text('Реєстрацію скасовано.')

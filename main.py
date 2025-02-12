@@ -14,6 +14,7 @@ from Functions.Registration.registration import get_registration_handler
 from Functions.Init_group.init_users import get_init_handler, init_user
 from Functions.Mention_all.mention_all import get_mention_handler, react_to_new_messages
 from Functions.Reminder.reminder import setup_reminder_functionality
+from Functions.Anti_spam.antispam_handlers import SpamHandlers, check_spam_decorator, admin_only
 
 # from Functions.Reminder.reminder import check_connect_to_sheet
 
@@ -28,11 +29,13 @@ API_HASH = os.getenv('TELEGRAM_API_HASH')
 PHONE_NUMBER = os.getenv('TELEGRAM_PHONE_NUMBER')
 CREDENTIALS_FILE = os.getenv('CREDENTIALS_FILE')
 SPREADSHEET_NAME = os.getenv('SPREADSHEET_NAME')
+MONGODB_URI = os.getenv('MONGODB_URI')
+ADMIN_ID = int(os.getenv('ADMIN_ID'))
 
+# Створюємо глобальний екземпляр обробника антиспаму
+spam_handlers = SpamHandlers(MONGODB_URI, ADMIN_ID)
 
-
-
-
+@check_spam_decorator
 async def bot_added_to_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Функція спрацьовує, коли бота додають до групи.
@@ -90,10 +93,17 @@ async def new_member_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
+    # Створюємо обробник антиспаму і зберігаємо його в bot_data як значення словника
+    spam_handlers_bot = SpamHandlers(MONGODB_URI, ADMIN_ID)
+    app.bot_data['spam_handlers'] = spam_handlers_bot
+
+    # Додаємо обробники антиспаму
+    for handler in spam_handlers_bot.get_handlers():
+        app.add_handler(handler)
+
     # Handlers for different commands and button clicks
     app.add_handler(CommandHandler('start', bot_added_to_group))
-
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_member_added))  # Handle new chat members
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_member_added))
 
     # Обробник для команди /registration
     registration_handler = get_registration_handler()
@@ -109,7 +119,8 @@ def main():
 
     setup_reminder_functionality(app)
     app.add_handler(MessageHandler(filters.ALL, react_to_new_messages))
-    # Run the bot
+
+    # Запуск Бота
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

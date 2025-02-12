@@ -9,6 +9,7 @@ import re
 import asyncio
 import time
 from dotenv import load_dotenv
+from Functions.Anti_spam.antispam_handlers import check_spam_decorator, admin_only
 
 load_dotenv()
 
@@ -20,7 +21,11 @@ last_execution_time = {}
 user_attempts = {}
 clown_reaction_users = {}
 
+@check_spam_decorator
 async def mention_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.effective_message:
+        return
+
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     bot = context.bot
@@ -35,21 +40,21 @@ async def mention_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         user_attempts[user_id] = user_attempts.get(user_id, 0) + 1
 
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             f"❗ Ви не можете виконати цю команду ще раз. Залишилося {minutes_left} хвилин."
         )
 
         if user_attempts[user_id] >= 3:
             await bot.set_message_reaction(
                 chat_id=chat_id,
-                message_id=update.message.message_id,
+                message_id=update.effective_message.message_id,
                 reaction=[ReactionTypeEmoji("🤡")]
             )
 
             clown_reaction_users[user_id] = 3
             user_attempts[user_id] = 0
 
-        return  # Вихід після попередження
+        return    # Вихід після попередження
 
     user_attempts[user_id] = 0
     last_execution_time[chat_id] = current_time
@@ -93,11 +98,11 @@ async def mention_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     " ".join(chunk),
                     parse_mode='Markdown'
                 )
-                asyncio.create_task(delete_message_after_delay(sent_message, 10))
+                # asyncio.create_task(delete_message_after_delay(sent_message, 10))
             except Exception as mention_error:
                 logging.warning(f"Помилка Markdown: {mention_error}")
                 sent_message = await update.message.reply_text(" ".join(chunk))
-                asyncio.create_task(delete_message_after_delay(sent_message, 10))
+                # asyncio.create_task(delete_message_after_delay(sent_message, 10))
 
         sent_message = await update.message.reply_text(
             f"📢 Всього згадано користувачів: {len(mentions)}\n\n"

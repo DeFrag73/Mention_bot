@@ -10,6 +10,7 @@ import asyncio
 from datetime import datetime, time
 import traceback
 import pymongo
+from Functions.Anti_spam.antispam_handlers import check_spam_decorator, admin_only
 
 load_dotenv()
 
@@ -155,7 +156,7 @@ def setup_daily_reminder(application):
         time=datetime.strptime('16:00', '%H:%M').time()
     )
 
-
+@admin_only
 async def test_reminder(update, context):
     """Manually trigger a test reminder"""
     try:
@@ -167,7 +168,7 @@ async def test_reminder(update, context):
         logging.error(f"Test reminder error: {e}")
         await update.message.reply_text(f"Error generating test reminder: {e}")
 
-
+@admin_only
 async def test_message(update, context):
     try:
         await context.bot.send_message(

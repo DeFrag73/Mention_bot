@@ -8,6 +8,7 @@ from pymongo import MongoClient, UpdateOne
 import asyncio
 import os
 from dotenv import load_dotenv
+from Functions.Anti_spam.antispam_handlers import check_spam_decorator, admin_only
 
 load_dotenv()
 
@@ -18,12 +19,12 @@ MONGO_URI = os.getenv('MONGO_URI')
 DB_NAME = os.getenv('MONGO_DATABASE')
 SPECIAL_USER = os.getenv('SPECIAL_USER')
 
-
+@check_spam_decorator
 async def init_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     bot = context.bot
 
-    # Перевірка прав адміністратора
+    # # Перевірка прав адміністратора
     # try:
     #     bot_member = await bot.get_chat_member(chat_id, bot.id)
     #     if not isinstance(bot_member, ChatMemberAdministrator):
