@@ -1,3 +1,16 @@
 # created by virtualenv automatically
-*
-.idea/
+/session_name.session
+/.env
+/Functions/Reminder/reminder_bot.log
+/Functions/Reminder/reminder_bot.log
+/Functions/Reminder/session_name.session
+/Functions/Reminder/telegram-bot-for-info-ae60666b2352.json
+/AWS/admin_courses_accessKeys.csv
+/.venv/
+/.idea/
+/AWS/Terraform/.terraform/
+/AWS/Terraform/.terraform.lock.hcl
+/clown.py
+/debug_and_test/
+/start_bot_info.bat
+/stop_bot_info.bat

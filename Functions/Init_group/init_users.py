@@ -92,13 +92,18 @@ async def init_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             result = users_collection.bulk_write(bulk_operations)
 
         # Підготовка звіту
-        await update.message.reply_text(
+        report_message = await update.message.reply_text(
             f"✅ Успішно ініціалізовано базу користувачів!\n"
             f"Оброблено користувачів: {len(participants)}\n"
             f"Оновлено записів: {result.modified_count}\n"
             f"Додано нових записів: {result.upserted_count}\n"
             f"Видалено застарілих записів: {delete_result.deleted_count}"
         )
+
+        await asyncio.sleep(10)
+
+        # Видалення повідомлення
+        await report_message.delete()
 
     except Exception as e:
         logging.error(f"Помилка при ініціалізації користувачів: {e}")

@@ -12,7 +12,7 @@ import functools
 
 from Functions.Registration.registration import get_registration_handler
 from Functions.Init_group.init_users import get_init_handler, init_user
-from Functions.Mention_all.mention_all import get_mention_handler
+from Functions.Mention_all.mention_all import get_mention_handler, react_to_new_messages
 from Functions.Reminder.reminder import setup_reminder_functionality
 
 # from Functions.Reminder.reminder import check_connect_to_sheet
@@ -65,7 +65,7 @@ async def new_member_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
     new_members = update.message.new_chat_members
     chat = update.effective_chat
 
-    # Перевіряємо, чи серед нових учасників єbot
+    # Перевіряємо, чи серед нових учасників є bot
     bot = context.bot
     for member in new_members:
         if member.id == bot.id:
@@ -91,27 +91,26 @@ def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     # Handlers for different commands and button clicks
-    # app.add_handler(CommandHandler('mention_all', mention_all))
     app.add_handler(CommandHandler('start', bot_added_to_group))
 
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_member_added))  # Handle new chat members
 
     # Обробник для команди /registration
     registration_handler = get_registration_handler()
-
     app.add_handler(registration_handler)
 
+    # Обробник для ініціалізації користувачів в групі
     init_handler = get_init_handler()
-
     app.add_handler(init_handler)
 
+    # Обробник для згадки всіх користувачів у групі
     mention_handler = get_mention_handler()
-
     app.add_handler(mention_handler)
 
     setup_reminder_functionality(app)
+    app.add_handler(MessageHandler(filters.ALL, react_to_new_messages))
     # Run the bot
-    app.run_polling()
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == '__main__':

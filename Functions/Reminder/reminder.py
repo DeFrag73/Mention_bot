@@ -21,14 +21,11 @@ MONGO_URI = os.getenv('MONGO_URI')
 MONGO_DATABASE = os.getenv('MONGO_DATABASE')
 
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-
-
 def connect_to_mongo():
     try:
         client = pymongo.MongoClient(MONGO_URI)
         db = client[MONGO_DATABASE]
-        users_collection = db['users']
+        users_collection = db['INFO-Members']
         logging.info("Successfully connected to MongoDB")
         return users_collection
     except Exception as e:
