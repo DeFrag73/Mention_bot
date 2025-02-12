@@ -2,6 +2,7 @@ import logging
 
 import asyncio
 import re
+from datetime import datetime
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import MessageHandler, filters, CallbackContext, ConversationHandler, CommandHandler, \
@@ -23,7 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Стани для ConversationHandler
-NAME, PATRONYMIC, SURNAME, GROUP, EMPLOYMENT = range(5)
+NAME, PATRONYMIC, SURNAME, GROUP, EMPLOYMENT, BIRTHDAY = range(6)
 
 load_dotenv()
 
@@ -51,6 +52,33 @@ if client:
 else:
     logger.critical("Не вдалося підключитися до MongoDB. Завершення роботи.")
     exit(1)
+
+# Додаємо нові константи на початку файлу після імпортів
+# Константи для валідації
+MAX_NAME_LENGTH = 25
+MIN_AGE = 16
+GROUP_PATTERN = r'^\d{3}$'
+UKRAINIAN_NAME_PATTERN = r'^[А-ЩЬЮЯҐЄІЇа-щьюяґєії\'\-]+$'
+DATE_PATTERN = r'^(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])\.\d{4}$'
+
+# Константи для напрямків роботи
+EMPLOYMENT_TYPES = {
+    "copywriting": "Копірайтинг",
+    "video": "Відео монтаж",
+    "design": "Дизайнер"
+}
+
+# Константи для повідомлень про помилки
+ERROR_MESSAGES = {
+    'name_length': "❌ Помилка: Ім'я не може бути довшим за 25 символів!",
+    'name_chars': "❌ Помилка: Ім'я має містити тільки українські літери!",
+    'surname_length': "❌ Помилка: Прізвище не може бути довшим за 25 символів!",
+    'surname_chars': "❌ Помилка: Прізвище має містити тільки українські літери!",
+    'date_format': "❌ Помилка: Некоректний формат дати!",
+    'future_date': "❌ Помилка: Дата народження не може бути в майбутньому!",
+    'min_age': "❌ Помилка: Вік повинен бути не менше 16 років!",
+    'group_format': "❌ Помилка: Номер групи має складатися з трьох цифр!"
+}
 
 
 async def start_registration(update: Update, context: CallbackContext) -> int:
@@ -87,8 +115,26 @@ async def get_name(update: Update, context: CallbackContext) -> int:
         await cancel(update, context)
         return ConversationHandler.END
 
+    if len(user_input) > MAX_NAME_LENGTH:
+        logger.warning(f"Користувач {update.effective_user.id} ввів задовге ім'я: {user_input}")
+        error_message = await update.message.reply_text(
+            ERROR_MESSAGES['name_length']
+        )
+        await asyncio.sleep(3)
+        await error_message.delete()
+        return NAME
+
+    if not re.match(UKRAINIAN_NAME_PATTERN, user_input):
+        logger.warning(f"Користувач {update.effective_user.id} ввів ім'я з недопустимими символами: {user_input}")
+        error_message = await update.message.reply_text(
+            ERROR_MESSAGES['name_chars']
+        )
+        await asyncio.sleep(3)
+        await error_message.delete()
+        return NAME
+
     context.user_data['name'] = user_input
-    await update.message.reply_text("Будь ласка, введіть ваше по батькові українською мовою:")
+    await update.message.reply_text("Будь ласка, введіть ваше по батькові:")
     return PATRONYMIC
 
 
@@ -101,8 +147,29 @@ async def get_patronymic(update: Update, context: CallbackContext) -> int:
         await cancel(update, context)
         return ConversationHandler.END
 
+    if len(user_input) > MAX_NAME_LENGTH:
+        logger.warning(f"Користувач {update.effective_user.id} ввів задовге по батькові: {user_input}")
+        error_message = await update.message.reply_text(
+            "❌ Помилка: По батькові не може бути довшим за 25 символів!\n"
+            "Будь ласка, введіть коротше по батькові."
+        )
+        await asyncio.sleep(3)
+        await error_message.delete()
+        return PATRONYMIC
+
+    if not re.match(UKRAINIAN_NAME_PATTERN, user_input):
+        logger.warning(
+            f"Користувач {update.effective_user.id} ввів по батькові з недопустимими символами: {user_input}")
+        error_message = await update.message.reply_text(
+            "❌ Помилка: По батькові має містити тільки українські літери!\n"
+            "Можна використовувати апостроф (') та дефіс (-)."
+        )
+        await asyncio.sleep(3)
+        await error_message.delete()
+        return PATRONYMIC
+
     context.user_data['patronymic'] = user_input
-    await update.message.reply_text("Будь ласка, введіть ваше прізвище українською мовою:")
+    await update.message.reply_text("Будь ласка, введіть ваше прізвище:")
     return SURNAME
 
 
@@ -115,9 +182,88 @@ async def get_surname(update: Update, context: CallbackContext) -> int:
         await cancel(update, context)
         return ConversationHandler.END
 
+    if len(user_input) > MAX_NAME_LENGTH:
+        logger.warning(f"Користувач {update.effective_user.id} ввів задовге прізвище: {user_input}")
+        error_message = await update.message.reply_text(
+            ERROR_MESSAGES['surname_length']
+        )
+        await asyncio.sleep(3)
+        await error_message.delete()
+        return SURNAME
+
+    if not re.match(UKRAINIAN_NAME_PATTERN, user_input):
+        logger.warning(f"Користувач {update.effective_user.id} ввів прізвище з недопустимими символами: {user_input}")
+        error_message = await update.message.reply_text(
+            ERROR_MESSAGES['surname_chars']
+        )
+        await asyncio.sleep(3)
+        await error_message.delete()
+        return SURNAME
+
     context.user_data['surname'] = user_input
-    await update.message.reply_text("Будь ласка, введіть номер вашої групи (три цифри):")
-    return GROUP
+    await update.message.reply_text(
+        "Будь ласка, введіть вашу дату народження у форматі ДД.ММ.РРРР\n"
+        "Наприклад: 01.01.2000"
+    )
+    return BIRTHDAY
+
+
+async def get_birthday(update: Update, context: CallbackContext) -> int:
+    user_input = update.message.text
+    logger.info(f"Отримано дату народження від користувача {update.effective_user.id}: {user_input}")
+
+    if user_input.lower() == 'скасувати':
+        logger.info(f"Користувач {update.effective_user.id} скасував реєстрацію на етапі введення дати народження")
+        await cancel(update, context)
+        return ConversationHandler.END
+
+    # Перевірка формату дати
+    if not re.match(DATE_PATTERN, user_input):
+        logger.warning(f"Користувач {update.effective_user.id} ввів некоректну дату: {user_input}")
+        error_message = await update.message.reply_text(
+            ERROR_MESSAGES['date_format']
+        )
+        await asyncio.sleep(3)
+        await error_message.delete()
+        return BIRTHDAY
+
+    try:
+        # Перевірка валідності дати
+        day, month, year = map(int, user_input.split('.'))
+        birthday_date = datetime(year, month, day)
+
+        # Перевірка що дата не в майбутньому
+        if birthday_date > datetime.now():
+            error_message = await update.message.reply_text(
+                ERROR_MESSAGES['future_date']
+            )
+            await asyncio.sleep(3)
+            await error_message.delete()
+            return BIRTHDAY
+
+        # Перевірка мінімального віку (наприклад, 16 років)
+        min_birth_year = datetime.now().year - 16
+        if year > min_birth_year:
+            error_message = await update.message.reply_text(
+                ERROR_MESSAGES['min_age']
+            )
+            await asyncio.sleep(3)
+            await error_message.delete()
+            return BIRTHDAY
+
+        context.user_data['birthday'] = user_input
+        await update.message.reply_text("Будь ласка, введіть номер вашої групи (три цифри):")
+        return GROUP
+
+    except ValueError:
+        logger.warning(f"Користувач {update.effective_user.id} ввів некоректну дату: {user_input}")
+        error_message = await update.message.reply_text(
+            "❌ Помилка: Введена дата недійсна!\n"
+            "Перевірте правильність введених даних."
+        )
+        await asyncio.sleep(3)
+        await error_message.delete()
+        return BIRTHDAY
 
 
 async def get_group(update: Update, context: CallbackContext) -> int:
@@ -129,43 +275,66 @@ async def get_group(update: Update, context: CallbackContext) -> int:
         await cancel(update, context)
         return ConversationHandler.END
 
-    # Перевірка формату групи (три цифри)
-    if not re.match(r'^\d{3}$', user_input):
-        logger.warning(f"Користувач {update.effective_user.id} ввів некоректний номер групи: {user_input}")
+    try:
+        # Підключення до MongoDB
+        client_mongo = MongoClient(MONGO_URI)
+        db_group = client_mongo[DB_NAME]
+        collection = db_group['FMI_Group_numbers']
 
-        # Надсилаємо повідомлення про помилку
-        error_message = await update.message.reply_text(
-            "❌ Помилка: Номер групи має складатися з трьох цифр!\n"
-            "Спробуйте ще раз."
+        # Перевірка існування групи в базі даних
+        group_exists = collection.find_one({"groupNumber": user_input})
+
+        if not group_exists:
+            logger.warning(f"Користувач {update.effective_user.id} ввів неіснуючий номер групи: {user_input}")
+            error_message = await update.message.reply_text(
+                "❌ Помилка: Такої групи не існує! Будь ласка, перевірте номер групи та спробуйте ще раз."
+            )
+            await asyncio.sleep(3)
+            await error_message.delete()
+            return GROUP
+
+        # Перевірка формату групи
+        if not re.match(GROUP_PATTERN, user_input):
+            logger.warning(f"Користувач {update.effective_user.id} ввів некоректний номер групи: {user_input}")
+            error_message = await update.message.reply_text(
+                ERROR_MESSAGES['group_format']
+            )
+            await asyncio.sleep(3)
+            await error_message.delete()
+            return GROUP
+
+        context.user_data['group'] = user_input
+
+        keyboard = [
+            [
+                InlineKeyboardButton("Копірайтинг ✍️", callback_data="copywriting"),
+                InlineKeyboardButton("Відео монтаж 🎥", callback_data="video"),
+                InlineKeyboardButton("Дизайнер 🎨", callback_data="design")
+            ],
+            [InlineKeyboardButton("Завершити вибір ✅", callback_data="done")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        message = await update.message.reply_text(
+            "Оберіть, що вам більше подобається (можна обрати декілька варіантів), \n\n"
+            "Щоб скасувати вибір натисніть на напрямок ще раз:",
+            reply_markup=reply_markup
         )
+        logger.info(f"Відправлено клавіатуру з напрямками користувачу {update.effective_user.id}")
 
-        # Видаляємо повідомлення про помилку через 3 секунди
-        await asyncio.sleep(3)
-        await error_message.delete()
+        context.user_data['message_id'] = message.message_id
+        context.user_data['employment_types'] = []
 
+    except Exception as e:
+        logger.error(f"Помилка при роботі з базою даних: {e}")
+        await update.message.reply_text("Вибачте, виникла технічна помилка. Спробуйте пізніше.")
         return GROUP
 
-    context.user_data['group'] = user_input
+    finally:
+        client_mongo.close()
 
-    keyboard = [
-        [
-            InlineKeyboardButton("Копірайтинг ✍️", callback_data="copywriting"),
-            InlineKeyboardButton("Відео монтаж 🎥", callback_data="video"),
-            InlineKeyboardButton("Дизайнер 🎨", callback_data="design")
-        ],
-        [InlineKeyboardButton("Завершити вибір ✅", callback_data="done")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    message = await update.message.reply_text(
-        "Оберіть, що вам більше подобається (можна обрати декілька варіантів):",
-        reply_markup=reply_markup
-    )
-    logger.info(f"Відправлено клавіатуру з напрямками користувачу {update.effective_user.id}")
-
-    context.user_data['message_id'] = message.message_id
-    context.user_data['employment_types'] = []
     return EMPLOYMENT
+
 
 
 
@@ -217,6 +386,7 @@ async def handle_employment_choice(update: Update, context: CallbackContext) -> 
                     {'$set': {
                         'username': username,
                         'full_name': full_name,
+                        'birthday': context.user_data.get('birthday'),
                         'group': group,
                         'role': 'учасник комісії',
                         'type_of_employment': employment_types
@@ -288,6 +458,7 @@ def get_registration_handler():
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             PATRONYMIC: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_patronymic)],
             SURNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_surname)],
+            BIRTHDAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_birthday)],
             GROUP: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_group)],
             EMPLOYMENT: [CallbackQueryHandler(handle_employment_choice)],
         },
