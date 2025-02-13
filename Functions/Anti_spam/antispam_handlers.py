@@ -5,7 +5,10 @@ import asyncio
 from Functions.Anti_spam.anti_spam import AntiSpam
 import functools
 from time import time
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
 
 def check_spam_decorator(func):
     @functools.wraps(func)
@@ -28,18 +31,22 @@ def check_spam_decorator(func):
 
 def admin_only(func):
     @functools.wraps(func)
-    async def wrapper(spam_handlers, update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         if not update.effective_user:
             await update.message.reply_text("Користувача не знайдено.")
             return
 
-        if update.effective_user.id != spam_handlers.admin_id:
+        # Отримуємо admin_id з .env
+        admin_id = int(os.getenv('ADMIN_ID'))
+
+        if update.effective_user.id != admin_id:
             await update.message.reply_text("Ця команда доступна тільки адміністратору.")
             return
 
-        return await func(spam_handlers, update, context, *args, **kwargs)
+        return await func(update, context, *args, **kwargs)
 
     return wrapper
+
 
 
 class SpamHandlers:
