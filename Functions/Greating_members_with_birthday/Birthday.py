@@ -127,12 +127,24 @@ class BirthdayGreeter:
 
     async def birthday_check_loop(self, bot: Bot):
         """Запускає цикл перевірки днів народження"""
+        birthday_logger.info(
+            f"Запуск циклу перевірки з налаштуваннями: TIMEZONE={TIMEZONE}, CHECK_HOUR={CHECK_HOUR}, CHECK_MINUTE={CHECK_MINUTE}")
+
+        # Початкова перевірка при запуску
+        now = datetime.now(TIMEZONE)
+        if now.hour >= CHECK_HOUR and now.minute >= CHECK_MINUTE:
+            await self.send_birthday_greetings(bot)
+
         while True:
             try:
                 now = datetime.now(TIMEZONE)
                 if now.hour == CHECK_HOUR and now.minute == CHECK_MINUTE:
                     await self.send_birthday_greetings(bot)
-                await asyncio.sleep(60)
+                    # Чекаємо 23 години 59 хвилин перед наступною перевіркою
+                    await asyncio.sleep(23 * 60 * 60 + 59 * 60)
+                else:
+                    # Чекаємо 1 хвилину перед наступною перевіркою
+                    await asyncio.sleep(60)
             except Exception as e:
                 birthday_logger.error(f"Помилка в циклі перевірки: {str(e)}")
                 await asyncio.sleep(60)
@@ -192,12 +204,12 @@ def setup_birthday_handler(application: Application, config: dict) -> None:
         application.bot_data['birthday_greeter'] = birthday_greeter
         application.add_handler(CommandHandler('test_birthday', test_birthday_command))
 
-        application.job_queue.run_repeating(
+        # Використовуємо job_queue для запуску циклу перевірки
+        application.job_queue.run_once(
             lambda context: context.application.create_task(
                 birthday_greeter.birthday_check_loop(context.application.bot)
             ),
-            interval=24 * 60 * 60,
-            first=0
+            when=0  # запускаємо одразу
         )
 
         birthday_logger.info("Система привітань успішно налаштована")
