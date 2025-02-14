@@ -210,6 +210,10 @@ async def get_surname(update: Update, context: CallbackContext) -> int:
 
 @check_spam_decorator
 async def get_birthday(update: Update, context: CallbackContext) -> int:
+    if not update.message:
+        logger.warning(f"Отримано оновлення без повідомлення від користувача {update.effective_user.id}")
+        return BIRTHDAY
+
     user_input = update.message.text
     logger.info(f"Отримано дату народження від користувача {update.effective_user.id}: {user_input}")
 

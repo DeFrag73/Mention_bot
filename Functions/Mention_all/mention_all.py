@@ -26,6 +26,14 @@ async def mention_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_message:
         return
 
+    # Перевірка чи чат є приватним
+    if update.effective_chat.type == "private":
+        await update.message.reply_text(
+            "❌ Ця команда доступна тільки в групах та спільнотах!\n"
+            "Будь ласка, використовуйте її у відповідних чатах."
+        )
+        return
+
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     bot = context.bot

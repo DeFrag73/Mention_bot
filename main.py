@@ -47,8 +47,23 @@ async def bot_added_to_group(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "👋 Привіт! Я багатофункціональний посіпака для управління групою.\n\n"
         "📊 Мої основні можливості:\n"
         "• Миттєві згадки користувачів\n"
-        "🚀 Для початку роботи, будь ласка, виконайте команду /init\n"
+        "🚀 Для початку роботи, будь ласка, виконайте команду /init\n\n"
+        "❗ Якщо ви учасник комісії то натисніть /registration\n"
     )
+
+    # # Перевірка прав адміністратора
+    # try:
+    #     bot_member = await bot.get_chat_member(chat_id, bot.id)
+    #     if not isinstance(bot_member, ChatMemberAdministrator):
+    #         await update.message.reply_text(
+    #             "❗ Для коректної роботи бот повинен бути адміністратором групи.\n"
+    #             "Будь ласка, надайте боту права адміністратора та спробуйте знову. /init"
+    #         )
+    #         return False
+    # except Exception as e:
+    #     logging.error(f"Помилка при перевірці прав адміністратора: {e}")
+    #     await update.message.reply_text("❌ Помилка при перевірці прав бота.")
+    #     return False
 
     try:
         await context.bot.send_message(

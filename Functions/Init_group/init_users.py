@@ -24,6 +24,14 @@ async def init_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     bot = context.bot
 
+    # Перевірка чи чат є приватним
+    if update.effective_chat.type == "private":
+        await update.message.reply_text(
+            "❌ Ця команда доступна тільки в групах та спільнотах!\n"
+            "Будь ласка, використовуйте її у відповідних чатах."
+        )
+        return
+
     # # Перевірка прав адміністратора
     # try:
     #     bot_member = await bot.get_chat_member(chat_id, bot.id)
