@@ -66,7 +66,8 @@ DATE_PATTERN = r'^(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])\.\d{4}$'
 EMPLOYMENT_TYPES = {
     "copywriting": "Копірайтинг",
     "video": "Відео монтаж",
-    "design": "Дизайнер"
+    "design": "Дизайнер",
+    "photo": "Фотограф"
 }
 
 # Константи для повідомлень про помилки
@@ -314,7 +315,10 @@ async def get_group(update: Update, context: CallbackContext) -> int:
             [
                 InlineKeyboardButton("Копірайтинг ✍️", callback_data="copywriting"),
                 InlineKeyboardButton("Відео монтаж 🎥", callback_data="video"),
-                InlineKeyboardButton("Дизайнер 🎨", callback_data="design")
+            ],
+            [
+                InlineKeyboardButton("Дизайнер 🎨", callback_data="design"),
+                InlineKeyboardButton("Фотограф 📸", callback_data="photo")
             ],
             [InlineKeyboardButton("Завершити вибір ✅", callback_data="done")]
         ]
@@ -419,9 +423,9 @@ async def handle_employment_choice(update: Update, context: CallbackContext) -> 
         employment_names = {
             "copywriting": "Копірайтинг",
             "video": "Відео монтаж",
-            "design": "Дизайнер"
+            "design": "Дизайнер",
+            "photo": "Фотограф"
         }
-
         if query.data in employment_types:
             employment_types.remove(query.data)
             logger.info(f"Видалено напрямок {query.data} для користувача {query.from_user.id}")
