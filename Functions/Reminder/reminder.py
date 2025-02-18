@@ -216,7 +216,7 @@ def setup_daily_reminder(application):
     # Створення джоба для щоденного нагадування о 18:00
     application.job_queue.run_daily(
         send_task_reminders,
-        time=datetime.strptime('18:00', '%H:%M').time()
+        time=datetime.strptime('16:00', '%H:%M').time()
     )
 
 @admin_only

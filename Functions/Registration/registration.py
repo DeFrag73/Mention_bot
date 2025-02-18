@@ -102,7 +102,7 @@ async def start_registration(update: Update, context: CallbackContext) -> int:
     logger.info(f"Збережено початкові дані користувача: ID={user.id}, Username={user.username}")
 
     await update.message.reply_text(
-        "Будь ласка, введіть ваше повне ім'я українською мовою:\n\n"
+        "Будь ласка, введіть тільки ваше ім'я українською мовою:\n\n"
         "Щоб скасувати реєстрацію напишіть слово \"скасувати\"",
     )
     return NAME
