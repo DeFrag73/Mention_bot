@@ -17,8 +17,7 @@ from Functions.Reminder.reminder import setup_reminder_functionality
 from Functions.Anti_spam.antispam_handlers import SpamHandlers, check_spam_decorator
 from Functions.Greating_members_with_birthday.Birthday import setup_birthday_handler, birthday_logger
 from Functions.new_task_notification.Task_notification import (  # Додаємо імпорт нових функцій
-    setup_task_handlers,
-    check_unstarted_tasks_job
+    TaskNotification
 )
 
 
@@ -128,12 +127,12 @@ def main():
         for handler in handlers:
             app.add_handler(handler)
 
-        # Налаштування обробників завдань
-        setup_task_handlers(app, app.bot_data)
+        task_notification = TaskNotification()
+        task_notification.register_handlers(app)
 
         # Налаштування періодичної перевірки завдань
         app.job_queue.run_repeating(
-            check_unstarted_tasks_job,
+            task_notification.check_and_send_tasks,
             interval=3600,  # перевіряти кожну годину
             first=10  # перша перевірка через 10 секунд після запуску
         )
