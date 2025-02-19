@@ -26,12 +26,25 @@ def connect_to_mongo():
     try:
         client = pymongo.MongoClient(MONGO_URI)
         db = client[MONGO_DATABASE]
-        users_collection = db['INFO-Members']
         logging.info("Successfully connected to MongoDB")
-        return users_collection
+
+        # Діагностика
+        print("Перевірка підключення до MongoDB...")
+        collections = db.list_collection_names()
+        print(f"Доступні колекції: {collections}")
+
+        members_count = db['INFO-Members'].count_documents({})
+        print(f"Кількість документів в колекції INFO-Members: {members_count}")
+
+        sample_doc = db['INFO-Members'].find_one()
+        print(f"Приклад документа: {sample_doc}")
+
+        return db  # повертаємо тільки об'єкт бази даних
     except Exception as e:
         logging.error(f"MongoDB connection error: {e}")
         logging.error(traceback.format_exc())
+        print(f"Помилка при підключенні до MongoDB: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
         raise
 
 
