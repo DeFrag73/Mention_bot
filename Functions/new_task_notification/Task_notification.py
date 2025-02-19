@@ -14,14 +14,14 @@ class TaskNotification:
         # Підключення до MongoDB
         self.db = connect_to_mongo()
         self.users_collection = self.db['INFO-Members']
+        # Нова колекція для повідомлень
+        self.task_messages = self.db['task-messages']
 
         # Підключення до Google Sheets
         self.sheet = connect_to_sheet()
 
     async def check_and_send_tasks(self, context: CallbackContext) -> None:
-        """Перевірка та посилання нових завдань"""
         try:
-            # Визначаємо очікувані заголовки
             expected_headers = [
                 'Завдання для поста',
                 'Дата події',
@@ -29,9 +29,9 @@ class TaskNotification:
                 'Дед-лайн',
                 'Статус поста',
                 'Картинка',
-                'о',  # Порожній стовпець
+                'о',
                 'Текст',
-                'к',  # Порожній стовпець
+                'к',
                 'Фото-закріп',
                 'Текст-закріп'
             ]
@@ -42,7 +42,6 @@ class TaskNotification:
                 if row['Статус поста'].lower() == 'не розпочато':
                     buttons = []
 
-                    # Додаємо кнопку "Взятися за дизайн" тільки для stories або reels
                     if row['Тип посту'].lower() in ['stories', 'reels']:
                         buttons.append([InlineKeyboardButton(
                             "Взятися за дизайн",
@@ -66,11 +65,22 @@ class TaskNotification:
                         f"Дедлайн: {row['Дед-лайн']}"
                     )
 
-                    await context.bot.send_message(
+                    message = await context.bot.send_message(
                         chat_id=self.INFO_CHAT_ID,
                         text=message_text,
                         reply_markup=keyboard
                     )
+
+                    # Зберігаємо інформацію про повідомлення в MongoDB
+                    self.task_messages.insert_one({
+                        'message_id': message.message_id,
+                        'row_index': idx,
+                        'type': row['Тип посту'],
+                        'designer': None,
+                        'writer': None,
+                        'created_at': datetime.now()
+                    })
+
         except Exception as e:
             print(f"Помилка при перевірці завдань: {e}")
 
@@ -104,69 +114,92 @@ class TaskNotification:
         await query.answer("Ваш запит надіслано адміністратору")
 
     async def handle_admin_decision(self, update: Update, context: CallbackContext) -> None:
-        """Обробка рішення адміністратора"""
         query = update.callback_query
-        parts = query.data.split('_', 3)
-
-        if len(parts) != 4:
-            print(f"Неправильний формат даних: {query.data}")
-            await query.message.edit_text("Помилка: неправильний формат даних")
-            return
-
-        decision, action, row_idx, username = parts
-        print(f"Оброблюємо рішення: {decision} для користувача @{username}")
+        decision, action, row_idx, username = query.data.split('_', 3)
 
         if decision == 'confirm':
             try:
-                # Знаходимо користувача в MongoDB (нечутливо до регістру)
+                # Знаходимо користувача в MongoDB
                 member = self.users_collection.find_one({
                     "username": {"$regex": f"^{username}$", "$options": "i"}
                 })
 
                 if not member:
-                    print(f"Користувача @{username} не знайдено в базі даних")
-                    # Додаткова діагностика
-                    all_users = list(self.db['INFO-Members'].find({}, {"username": 1}))
-                    print(f"Всі доступні username в базі: {[u.get('username') for u in all_users]}")
                     await query.message.edit_text(f"Помилка: користувача @{username} не знайдено в базі даних")
                     return
 
                 full_name = member['full_name']
-                print(f"Знайдено користувача: {full_name}")
 
-                # Визначаємо індекси стовпців
+                # Оновлюємо Google Sheet
                 header_row = self.sheet.row_values(1)
-                try:
-                    картинка_col = header_row.index('Картинка') + 1
-                    текст_col = header_row.index('Текст') + 1
-                    статус_col = header_row.index('Статус поста') + 1
-                except ValueError as e:
-                    print(f"Помилка при пошуку стовпців: {e}")
-                    print(f"Наявні заголовки: {header_row}")
-                    await query.message.edit_text("Помилка: не знайдено потрібні стовпці в таблиці")
-                    return
+                картинка_col = header_row.index('Картинка') + 1
+                текст_col = header_row.index('Текст') + 1
+                статус_col = header_row.index('Статус поста') + 1
 
-                print(f"Оновлюємо комірку для {action} в рядку {row_idx}")
+                # Знаходимо повідомлення в MongoDB
+                task_message = self.task_messages.find_one({'row_index': int(row_idx)})
 
-                # Оновлюємо відповідну комірку
-                if action == 'design':
-                    self.sheet.update_cell(int(row_idx), картинка_col, full_name)
-                    # Одразу змінюємо статус на "Виконується"
-                    self.sheet.update_cell(int(row_idx), статус_col, 'Виконується')
-                    print(f"Оновлено комірку дизайну та статус")
-                else:  # text
-                    self.sheet.update_cell(int(row_idx), текст_col, full_name)
-                    # Одразу змінюємо статус на "Виконується"
-                    self.sheet.update_cell(int(row_idx), статус_col, 'Виконується')
-                    print(f"Оновлено комірку тексту та статус")
+                if task_message:
+                    update_data = {}
+                    if action == 'design':
+                        update_data['designer'] = username
+                        self.sheet.update_cell(int(row_idx), картинка_col, full_name)
+                    else:  # text
+                        update_data['writer'] = username
+                        self.sheet.update_cell(int(row_idx), текст_col, full_name)
 
-                # Перевіряємо чи всі поля заповнені
-                row_data = self.sheet.row_values(int(row_idx))
-                print(f"Дані рядка: {row_data}")
+                    # Оновлюємо запис в MongoDB
+                    self.task_messages.update_one(
+                        {'row_index': int(row_idx)},
+                        {'$set': update_data}
+                    )
 
-                if (row_data[картинка_col - 1].strip() and row_data[текст_col - 1].strip()):
-                    self.sheet.update_cell(int(row_idx), статус_col, 'Виконується')
-                    print("Статус оновлено на 'Виконується'")
+                    # Перевіряємо чи потрібно оновити повідомлення або видалити його
+                    updated_task = self.task_messages.find_one({'row_index': int(row_idx)})
+
+                    try:
+                        if task_message['type'].lower() in ['stories', 'reels']:
+                            if updated_task.get('designer'):
+                                # Видаляємо повідомлення для stories/reels
+                                await context.bot.delete_message(
+                                    chat_id=self.INFO_CHAT_ID,
+                                    message_id=task_message['message_id']
+                                )
+                                self.task_messages.delete_one({'row_index': int(row_idx)})
+                        else:
+                            if updated_task.get('designer') and updated_task.get('writer'):
+                                # Видаляємо повідомлення, якщо обидві ролі заповнені
+                                await context.bot.delete_message(
+                                    chat_id=self.INFO_CHAT_ID,
+                                    message_id=task_message['message_id']
+                                )
+                                self.task_messages.delete_one({'row_index': int(row_idx)})
+                            else:
+                                # Оновлюємо кнопки
+                                buttons = []
+                                if not updated_task.get('designer'):
+                                    buttons.append([InlineKeyboardButton(
+                                        "Взятися за дизайн",
+                                        callback_data=f"design_{row_idx}"
+                                    )])
+                                if not updated_task.get('writer'):
+                                    buttons.append([InlineKeyboardButton(
+                                        "Взятися за текст",
+                                        callback_data=f"text_{row_idx}"
+                                    )])
+
+                                if buttons:
+                                    await context.bot.edit_message_reply_markup(
+                                        chat_id=self.INFO_CHAT_ID,
+                                        message_id=task_message['message_id'],
+                                        reply_markup=InlineKeyboardMarkup(buttons)
+                                    )
+
+                    except Exception as e:
+                        print(f"Помилка при оновленні повідомлення: {e}")
+
+                # Оновлюємо статус в таблиці
+                self.sheet.update_cell(int(row_idx), статус_col, 'Виконується')
 
                 await query.answer("Успішно оновлено")
                 await query.message.edit_text(
@@ -174,16 +207,12 @@ class TaskNotification:
                 )
 
             except Exception as e:
-                print(f"Детальна помилка при підтвердженні завдання: {str(e)}")
-                import traceback
-                print(f"Traceback: {traceback.format_exc()}")
+                print(f"Помилка при підтвердженні завдання: {e}")
                 await query.message.edit_text(f"Сталася помилка при обробці запиту: {str(e)}")
 
         else:  # reject
             await query.answer("Відхилено")
-            await query.message.edit_text(
-                f"❌ Відхилено запит від @{username}"
-            )
+            await query.message.edit_text(f"❌ Відхилено запит від @{username}")
 
     def register_handlers(self, application):
         """Реєстрація обробників подій"""
