@@ -1,26 +1,34 @@
+import asyncio
 from typing import Dict, List, Optional
 import os
 from datetime import datetime
+
+import telegram
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import CallbackContext, CallbackQueryHandler
+from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
+
+from Functions.Anti_spam.antispam_handlers import admin_only
 from Functions.Reminder.reminder import connect_to_sheet, connect_to_mongo
 
 
 class TaskNotification:
     def __init__(self):
-        self.INFO_CHAT_ID = os.getenv('TEST_CHAT_ID')
+        self.INFO_CHAT_ID = os.getenv('INFO_CHAT_ID')
         self.ADMIN_ID = os.getenv('ADMIN_ID')
+        self.THREAD_ID = int(os.getenv('INFO_CHAT_THREAD_ID'))
 
         # Підключення до MongoDB
         self.db = connect_to_mongo()
         self.users_collection = self.db['INFO-Members']
         # Нова колекція для повідомлень
         self.task_messages = self.db['task-messages']
+        self.task_messages.create_index('row_index')
 
         # Підключення до Google Sheets
         self.sheet = connect_to_sheet()
 
     async def check_and_send_tasks(self, context: CallbackContext) -> None:
+        await self.cleanup_completed_tasks()
         try:
             expected_headers = [
                 'Завдання для поста',
@@ -39,7 +47,11 @@ class TaskNotification:
             records = self.sheet.get_all_records(expected_headers=expected_headers)
 
             for idx, row in enumerate(records, start=2):
-                if row['Статус поста'].lower() == 'не розпочато':
+                # Перевіряємо чи існує вже завдання з таким row_index
+                existing_task = self.task_messages.find_one({'row_index': idx})
+
+                # Якщо завдання не існує і статус "не розпочато"
+                if not existing_task and row['Статус поста'].lower() == 'не розпочато':
                     buttons = []
 
                     if row['Тип посту'].lower() in ['stories', 'reels']:
@@ -67,13 +79,15 @@ class TaskNotification:
 
                     message = await context.bot.send_message(
                         chat_id=self.INFO_CHAT_ID,
+                        message_thread_id=int(self.THREAD_ID),
                         text=message_text,
                         reply_markup=keyboard
                     )
 
-                    # Зберігаємо інформацію про повідомлення в MongoDB
+                    # Зберігаємо інформацію про нове повідомлення
                     self.task_messages.insert_one({
                         'message_id': message.message_id,
+                        'message_thread_id': self.THREAD_ID,
                         'row_index': idx,
                         'type': row['Тип посту'],
                         'designer': None,
@@ -169,11 +183,18 @@ class TaskNotification:
                         else:
                             if updated_task.get('designer') and updated_task.get('writer'):
                                 # Видаляємо повідомлення, якщо обидві ролі заповнені
-                                await context.bot.delete_message(
-                                    chat_id=self.INFO_CHAT_ID,
-                                    message_id=task_message['message_id']
-                                )
-                                self.task_messages.delete_one({'row_index': int(row_idx)})
+                                try:
+                                    await asyncio.sleep(1)  # Затримка в 1 секунду
+                                    await context.bot.delete_message(
+                                        chat_id=self.INFO_CHAT_ID,
+                                        message_id=task_message['message_id']
+                                    )
+                                except telegram.error.BadRequest as e:
+                                    if "Message to delete not found" in str(e):
+                                        self.task_messages.delete_one({'row_index': int(row_idx)})
+                                        print(f"Повідомлення вже було видалено: {task_message['message_id']}")
+                                    else:
+                                        raise e
                             else:
                                 # Оновлюємо кнопки
                                 buttons = []
@@ -202,6 +223,7 @@ class TaskNotification:
                 self.sheet.update_cell(int(row_idx), статус_col, 'Виконується')
 
                 await query.answer("Успішно оновлено")
+                await self.cleanup_completed_tasks()
                 await query.message.edit_text(
                     f"✅ Користувача @{username} призначено на завдання"
                 )
@@ -214,6 +236,40 @@ class TaskNotification:
             await query.answer("Відхилено")
             await query.message.edit_text(f"❌ Відхилено запит від @{username}")
 
+    async def cleanup_completed_tasks(self):
+        """Функція для очищення бази даних від завершених завдань"""
+        try:
+            # Отримуємо всі записи з бази даних
+            all_tasks = list(self.task_messages.find())
+
+            for task in all_tasks:
+                # Перевіряємо чи всі учасники додані
+                if task['type'].lower() in ['stories', 'reels']:
+                    if task.get('designer'):
+                        # Для stories/reels потрібен тільки дизайнер
+                        self.task_messages.delete_one({'_id': task['_id']})
+                else:
+                    # Для інших типів потрібні обидва учасники
+                    if task.get('designer') and task.get('writer'):
+                        self.task_messages.delete_one({'_id': task['_id']})
+
+            print("Очищення бази даних завершено успішно")
+        except Exception as e:
+            print(f"Помилка при очищенні бази даних: {e}")
+
+    async def get_thread_info(self, update: Update, context: CallbackContext) -> None:
+        """Команда для отримання інформації про гілку"""
+        message = update.message
+
+        thread_info = (
+            f"📌 Інформація про повідомлення:\n\n"
+            f"Chat ID: {message.chat_id}\n"
+            f"Message ID: {message.message_id}\n"
+            f"Thread ID: {message.message_thread_id}\n"
+        )
+
+        await message.reply_text(thread_info)
+
     def register_handlers(self, application):
         """Реєстрація обробників подій"""
         application.add_handler(CallbackQueryHandler(
@@ -222,3 +278,4 @@ class TaskNotification:
         application.add_handler(CallbackQueryHandler(
             self.handle_admin_decision,
             pattern='^(confirm|reject)_'))
+        application.add_handler(CommandHandler('thread_info', self.get_thread_info))
