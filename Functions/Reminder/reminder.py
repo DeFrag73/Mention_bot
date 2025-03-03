@@ -16,7 +16,7 @@ load_dotenv()
 
 CREDENTIALS_FILE = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
 SPREADSHEET_NAME = os.getenv('SPREADSHEET_NAME')
-INFO_CHAT_ID = os.getenv('TEST_CHAT_ID')
+INFO_CHAT_ID = os.getenv('INFO_CHAT_ID')
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 MONGO_URI = os.getenv('MONGO_URI')
 MONGO_DATABASE = os.getenv('MONGO_DATABASE')
@@ -26,6 +26,7 @@ def connect_to_mongo():
     try:
         client = pymongo.MongoClient(MONGO_URI)
         db = client[MONGO_DATABASE]
+        users_collection = db['INFO-Members']
         logging.info("Successfully connected to MongoDB")
 
         # Діагностика
@@ -33,13 +34,13 @@ def connect_to_mongo():
         collections = db.list_collection_names()
         print(f"Доступні колекції: {collections}")
 
-        members_count = db['INFO-Members'].count_documents({})
+        members_count = users_collection.count_documents({})
         print(f"Кількість документів в колекції INFO-Members: {members_count}")
 
-        sample_doc = db['INFO-Members'].find_one()
+        sample_doc = users_collection.find_one()
         print(f"Приклад документа: {sample_doc}")
 
-        return db  # повертаємо тільки об'єкт бази даних
+        return db, users_collection  # повертаємо кортеж з обома об'єктами
     except Exception as e:
         logging.error(f"MongoDB connection error: {e}")
         logging.error(traceback.format_exc())
@@ -95,7 +96,7 @@ async def send_task_reminders(context=None, force_test=False):
         all_values = sheet.get_all_values()
 
         # Connect to MongoDB
-        users_collection = connect_to_mongo()
+        db, users_collection = connect_to_mongo()
 
         # Get column indices
         headers = all_values[0]

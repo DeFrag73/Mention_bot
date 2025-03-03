@@ -16,9 +16,7 @@ from Functions.Mention_all.mention_all import get_mention_handler, react_to_new_
 from Functions.Reminder.reminder import setup_reminder_functionality
 from Functions.Anti_spam.antispam_handlers import SpamHandlers, check_spam_decorator
 from Functions.Greating_members_with_birthday.Birthday import setup_birthday_handler, birthday_logger
-from Functions.new_task_notification.Task_notification import (  # Додаємо імпорт нових функцій
-    TaskNotification
-)
+from Functions.new_task_notification.Task_notification import TaskNotification
 
 
 # Налаштування логування
@@ -107,14 +105,14 @@ def main():
         birthday_logger.info("Запуск бота...")
 
         # Налаштування обробників
-        setup_birthday_handler(app, config)
+        setup_birthday_handler(app, config) # /test_birthday
         birthday_logger.info("Birthday handler встановлено")
 
         # Налаштування антиспаму
         spam_handlers_bot = SpamHandlers(config['MONGODB_URI'], config['ADMIN_ID'])
         app.bot_data['spam_handlers'] = spam_handlers_bot
         for handler in spam_handlers_bot.get_handlers():
-            app.add_handler(handler)
+            app.add_handler(handler) # /whitelist_add /whitelist_remove /reset_warnings
 
         # Додавання обробників команд
         handlers = [
@@ -127,7 +125,7 @@ def main():
         for handler in handlers:
             app.add_handler(handler)
 
-        task_notification = TaskNotification()
+        task_notification = TaskNotification() # /thread_info
         task_notification.register_handlers(app)
 
         # Налаштування періодичної перевірки завдань
@@ -138,7 +136,7 @@ def main():
         )
 
         # Налаштування додаткової функціональності
-        setup_reminder_functionality(app)
+        setup_reminder_functionality(app) # /check /test_reminder /test_message /set_daily_reminder
         app.add_handler(MessageHandler(filters.ALL, react_to_new_messages))
 
         birthday_logger.info("Всі обробники успішно встановлено")

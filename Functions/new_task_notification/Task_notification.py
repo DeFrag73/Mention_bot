@@ -14,15 +14,16 @@ from Functions.Reminder.reminder import connect_to_sheet, connect_to_mongo
 class TaskNotification:
     def __init__(self):
         self.INFO_CHAT_ID = os.getenv('INFO_CHAT_ID')
-        self.ADMIN_ID = os.getenv('ADMIN_ID')
         self.THREAD_ID = int(os.getenv('INFO_CHAT_THREAD_ID'))
+        self.ADMIN_ID = os.getenv('ADMIN_ID')
 
         # Підключення до MongoDB
-        self.db = connect_to_mongo()
+        self.db, _ = connect_to_mongo()
         self.users_collection = self.db['INFO-Members']
         # Нова колекція для повідомлень
         self.task_messages = self.db['task-messages']
         self.task_messages.create_index('row_index')
+        self.pending_messages = {}
 
         # Підключення до Google Sheets
         self.sheet = connect_to_sheet()
@@ -54,7 +55,7 @@ class TaskNotification:
                 if not existing_task and row['Статус поста'].lower() == 'не розпочато':
                     buttons = []
 
-                    if row['Тип посту'].lower() in ['stories', 'reels']:
+                    if row['Тип посту'].lower() in ['storis', 'reels']:
                         buttons.append([InlineKeyboardButton(
                             "Взятися за дизайн",
                             callback_data=f"design_{idx}")])
@@ -99,10 +100,19 @@ class TaskNotification:
             print(f"Помилка при перевірці завдань: {e}")
 
     async def handle_task_button(self, update: Update, context: CallbackContext) -> None:
-        """Обробка натискання кнопок"""
         query = update.callback_query
         action, row_idx = query.data.split('_')
         user = query.from_user
+
+        print(f"Отримано запит від користувача: {user.id}")
+
+        # Надсилаємо повідомлення користувачу про очікування
+        waiting_message = await context.bot.send_message(
+            chat_id=user.id,
+            text="⏳ Ваш запит надіслано адміністратору. Очікуйте на рішення."
+        )
+
+        print(f"Відправлено повідомлення про очікування: {waiting_message.message_id}")
 
         admin_message = (
             f"Користувач {user.full_name} (@{user.username}) "
@@ -110,26 +120,67 @@ class TaskNotification:
             f"Завдання з рядка {row_idx}"
         )
 
-        confirm_keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Підтвердити",
-                                     callback_data=f"confirm_{action}_{row_idx}_{user.username}"),
-                InlineKeyboardButton("❌ Відхилити",
-                                     callback_data=f"reject_{action}_{row_idx}_{user.username}")
-            ]
-        ])
-
-        await context.bot.send_message(
-            chat_id=self.ADMIN_ID,
-            text=admin_message,
-            reply_markup=confirm_keyboard
-        )
-
-        await query.answer("Ваш запит надіслано адміністратору")
+        try:
+            admin_msg = await context.bot.send_message(
+                chat_id=self.ADMIN_ID,
+                text=admin_message,
+                reply_markup=InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("✅ Підтвердити",
+                                             callback_data=f"confirm_{action}_{row_idx}_{user.username}"),
+                        InlineKeyboardButton("❌ Відхилити",
+                                             callback_data=f"reject_{action}_{row_idx}_{user.username}")
+                    ]
+                ])
+            )
+            print(f"Відправлено повідомлення адміну: {admin_msg.message_id}")
+        except Exception as e:
+            print(f"Помилка при відправці повідомлення адміну: {e}")
 
     async def handle_admin_decision(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query
         decision, action, row_idx, username = query.data.split('_', 3)
+
+        try:
+            # Знаходимо користувача в MongoDB
+            member = self.users_collection.find_one({
+                "username": {"$regex": f"^{username}$", "$options": "i"}
+            })
+
+            if member and 'user_id' in member:
+                user_id = member['user_id']
+                message_key = f"{user_id}_{row_idx}_{action}"
+
+                # Видаляємо повідомлення про очікування
+                if message_key in self.pending_messages:
+                    try:
+                        await context.bot.edit_message_text(
+                            chat_id=user_id,
+                            message_id=self.pending_messages[message_key],
+                            text="✅ Ваш запит схвалено!" if decision == "confirm" else "❌ Ваш запит відхилено"
+                        )
+                    except:
+                        pass # Ігноруємо помилки при видаленні
+                    del self.pending_messages[message_key]
+
+                # Надсилаємо нове повідомлення про рішення
+                result_message = await context.bot.send_message(
+                    chat_id=user_id,
+                    text="✅ Ваш запит схвалено!" if decision == "confirm" else "❌ Ваш запит відхилено"
+                )
+
+                # Встановлюємо таймер на видалення повідомлення
+                context.job_queue.run_once(
+                    self.delete_message,
+                    20,  # 20 секунд
+                    data={
+                        'chat_id': user_id,
+                        'message_id': result_message.message_id
+                    }
+                )
+
+        except Exception as e:
+            print(f"Помилка при відправці повідомлення користувачу: {e}")
 
         if decision == 'confirm':
             try:
@@ -235,6 +286,17 @@ class TaskNotification:
         else:  # reject
             await query.answer("Відхилено")
             await query.message.edit_text(f"❌ Відхилено запит від @{username}")
+
+    async def delete_message(self, context: CallbackContext):
+        """Функція для видалення повідомлення"""
+        job = context.job
+        try:
+            await context.bot.delete_message(
+                chat_id=job.data['chat_id'],
+                message_id=job.data['message_id']
+            )
+        except:
+            pass
 
     async def cleanup_completed_tasks(self):
         """Функція для очищення бази даних від завершених завдань"""
