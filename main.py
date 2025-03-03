@@ -17,7 +17,7 @@ from Functions.Reminder.reminder import setup_reminder_functionality
 from Functions.Anti_spam.antispam_handlers import SpamHandlers, check_spam_decorator
 from Functions.Greating_members_with_birthday.Birthday import setup_birthday_handler, birthday_logger
 from Functions.new_task_notification.Task_notification import TaskNotification
-
+from Functions.Making_groups_of_peoples.Making_Group import get_group_creation_handler
 
 # Налаштування логування
 logging.basicConfig(
@@ -121,6 +121,7 @@ def main():
             get_registration_handler(), # /registration
             get_init_handler(), # /init
             get_mention_handler(), # /mention_all
+            get_group_creation_handler(),  # /create_user_group
         ]
         for handler in handlers:
             app.add_handler(handler)
