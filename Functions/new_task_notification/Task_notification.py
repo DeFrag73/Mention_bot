@@ -13,8 +13,8 @@ from Functions.Reminder.reminder import connect_to_sheet, connect_to_mongo
 
 class TaskNotification:
     def __init__(self):
-        self.INFO_CHAT_ID = os.getenv('INFO_CHAT_ID')
-        self.THREAD_ID = int(os.getenv('INFO_CHAT_THREAD_ID'))
+        self.INFO_CHAT_ID = os.getenv('TEST_CHAT_ID')
+        self.THREAD_ID = int(os.getenv('TEST_THREAD_ID'))
         self.ADMIN_ID = os.getenv('ADMIN_ID')
 
         # Підключення до MongoDB
@@ -105,6 +105,24 @@ class TaskNotification:
         user = query.from_user
 
         print(f"Отримано запит від користувача: {user.id}")
+
+        # Спочатку перевіряємо чи є користувач в базі
+        member = self.users_collection.find_one({
+            "username": {"$regex": f"^{user.username}$", "$options": "i"}
+        })
+
+        if not member:
+            notification_message = (
+                "⚠️ Вас не знайдено в базі даних системи сповіщень!\n\n"
+                "Можливі причини:\n"
+                "• Ви змінили свій нікнейм в Telegram\n"
+                "• Ви змінили ім'я користувача\n"
+                "• Ви ще не зареєстровані в системі\n\n"
+                "🔄 Будь ласка, перереєструйтеся, використовуючи команду /registration"
+            )
+            await context.bot.send_message(chat_id=user.id, text=notification_message)
+            await query.answer("Необхідна перереєстрація")
+            return
 
         # Надсилаємо повідомлення користувачу про очікування
         waiting_message = await context.bot.send_message(
@@ -223,7 +241,7 @@ class TaskNotification:
                     updated_task = self.task_messages.find_one({'row_index': int(row_idx)})
 
                     try:
-                        if task_message['type'].lower() in ['stories', 'reels']:
+                        if task_message['type'].lower() in ['storis', 'reels']:
                             if updated_task.get('designer'):
                                 # Видаляємо повідомлення для stories/reels
                                 await context.bot.delete_message(
@@ -306,7 +324,7 @@ class TaskNotification:
 
             for task in all_tasks:
                 # Перевіряємо чи всі учасники додані
-                if task['type'].lower() in ['stories', 'reels']:
+                if task['type'].lower() in ['storis', 'reels']:
                     if task.get('designer'):
                         # Для stories/reels потрібен тільки дизайнер
                         self.task_messages.delete_one({'_id': task['_id']})
