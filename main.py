@@ -121,8 +121,12 @@ def main():
             get_registration_handler(), # /registration
             get_init_handler(), # /init
             get_mention_handler(), # /mention_all
-            get_group_creation_handler(),  # /create_user_group
         ]
+
+        # Додаємо handlers для груп окремо
+        group_handlers = get_group_creation_handler()
+        handlers.extend(group_handlers)  # розширюємо список handlers
+
         for handler in handlers:
             app.add_handler(handler)
 

@@ -13,8 +13,8 @@ from Functions.Reminder.reminder import connect_to_sheet, connect_to_mongo
 
 class TaskNotification:
     def __init__(self):
-        self.INFO_CHAT_ID = os.getenv('TEST_CHAT_ID')
-        self.THREAD_ID = int(os.getenv('TEST_THREAD_ID'))
+        self.INFO_CHAT_ID = os.getenv('INFO_CHAT_ID')
+        self.THREAD_ID = int(os.getenv('INFO_CHAT_THREAD_ID'))
         self.ADMIN_ID = os.getenv('ADMIN_ID')
 
         # Підключення до MongoDB
