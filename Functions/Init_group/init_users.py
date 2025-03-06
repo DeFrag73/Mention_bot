@@ -3,11 +3,11 @@ import datetime
 from telegram import Update, ChatMemberAdministrator
 from telegram.ext import ContextTypes, CommandHandler
 from telethon import TelegramClient, errors, functions, types
-from telethon.tl.types import InputPeerUser
 from pymongo import MongoClient, UpdateOne
 import asyncio
 import os
 from dotenv import load_dotenv
+from Functions.Anti_spam.antispam_handlers import check_spam_decorator, admin_only
 
 load_dotenv()
 
@@ -18,12 +18,20 @@ MONGO_URI = os.getenv('MONGO_URI')
 DB_NAME = os.getenv('MONGO_DATABASE')
 SPECIAL_USER = os.getenv('SPECIAL_USER')
 
-
+@check_spam_decorator
 async def init_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     bot = context.bot
 
-    # Перевірка прав адміністратора
+    # Перевірка чи чат є приватним
+    if update.effective_chat.type == "private":
+        await update.message.reply_text(
+            "❌ Ця команда доступна тільки в групах та спільнотах!\n"
+            "Будь ласка, використовуйте її у відповідних чатах."
+        )
+        return
+
+    # # Перевірка прав адміністратора
     # try:
     #     bot_member = await bot.get_chat_member(chat_id, bot.id)
     #     if not isinstance(bot_member, ChatMemberAdministrator):
@@ -92,13 +100,18 @@ async def init_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             result = users_collection.bulk_write(bulk_operations)
 
         # Підготовка звіту
-        await update.message.reply_text(
+        report_message = await update.message.reply_text(
             f"✅ Успішно ініціалізовано базу користувачів!\n"
             f"Оброблено користувачів: {len(participants)}\n"
             f"Оновлено записів: {result.modified_count}\n"
             f"Додано нових записів: {result.upserted_count}\n"
             f"Видалено застарілих записів: {delete_result.deleted_count}"
         )
+
+        await asyncio.sleep(10)
+
+        # Видалення повідомлення
+        await report_message.delete()
 
     except Exception as e:
         logging.error(f"Помилка при ініціалізації користувачів: {e}")

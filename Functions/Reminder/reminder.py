@@ -10,6 +10,7 @@ import asyncio
 from datetime import datetime, time
 import traceback
 import pymongo
+from Functions.Anti_spam.antispam_handlers import check_spam_decorator, admin_only
 
 load_dotenv()
 
@@ -21,19 +22,30 @@ MONGO_URI = os.getenv('MONGO_URI')
 MONGO_DATABASE = os.getenv('MONGO_DATABASE')
 
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-
-
 def connect_to_mongo():
     try:
         client = pymongo.MongoClient(MONGO_URI)
         db = client[MONGO_DATABASE]
-        users_collection = db['users']
+        users_collection = db['INFO-Members']
         logging.info("Successfully connected to MongoDB")
-        return users_collection
+
+        # Діагностика
+        print("Перевірка підключення до MongoDB...")
+        collections = db.list_collection_names()
+        print(f"Доступні колекції: {collections}")
+
+        members_count = users_collection.count_documents({})
+        print(f"Кількість документів в колекції INFO-Members: {members_count}")
+
+        sample_doc = users_collection.find_one()
+        print(f"Приклад документа: {sample_doc}")
+
+        return db, users_collection  # повертаємо кортеж з обома об'єктами
     except Exception as e:
         logging.error(f"MongoDB connection error: {e}")
         logging.error(traceback.format_exc())
+        print(f"Помилка при підключенні до MongoDB: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
         raise
 
 
@@ -60,7 +72,7 @@ def connect_to_sheet():
     except Exception as e:
         raise Exception(f"Помилка підключення до Google Sheets: {e}")
 
-
+@admin_only
 async def check_connect_to_sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
@@ -84,7 +96,7 @@ async def send_task_reminders(context=None, force_test=False):
         all_values = sheet.get_all_values()
 
         # Connect to MongoDB
-        users_collection = connect_to_mongo()
+        db, users_collection = connect_to_mongo()
 
         # Get column indices
         headers = all_values[0]
@@ -93,6 +105,8 @@ async def send_task_reminders(context=None, force_test=False):
         deadline_col = headers.index('Дед-лайн')
         image_person_col = headers.index('Картинка')
         text_person_col = headers.index('Текст')
+        image_active_col = image_person_col + 1
+        text_active_col = text_person_col + 1
 
         today = datetime.now().strftime('%d.%m.%Y')
 
@@ -109,11 +123,19 @@ async def send_task_reminders(context=None, force_test=False):
                 performers = []
                 usernames = []
 
-                # Check image and text performers
+                # Перевіряємо виконавця картинки
                 if row[image_person_col].strip():
-                    performers.append(row[image_person_col])
+                    # Додаємо перевірку значення активності
+                    is_active = row[image_active_col].lower() != 'true'
+                    if is_active:
+                        performers.append(row[image_person_col])
+
+                # Перевіряємо виконавця тексту
                 if row[text_person_col].strip():
-                    performers.append(row[text_person_col])
+                    # Додаємо перевірку значення активності
+                    is_active = row[text_active_col].lower() != 'true'
+                    if is_active:
+                        performers.append(row[text_person_col])
 
                 # Lookup usernames in MongoDB
                 for performer in performers:
@@ -150,6 +172,59 @@ async def send_task_reminders(context=None, force_test=False):
         logging.error(traceback.format_exc())
 
 
+@admin_only
+async def set_daily_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Змінює час щоденного нагадування.
+    Використання: /set_daily_reminder ГГ:ХХ
+    Наприклад: /set_daily_reminder 18:00
+    """
+    try:
+        # Перевіряємо чи надано аргумент з часом
+        if not context.args:
+            await update.message.reply_text(
+                "❌ Будь ласка, вкажіть час у форматі ГГ:ХХ\n"
+                "Наприклад: /set_daily_reminder 18:00"
+            )
+            return
+
+        time_str = context.args[0]
+
+        # Перевіряємо правильність формату часу
+        try:
+            # Парсимо введений час
+            input_time = datetime.strptime(time_str, '%H:%M').time()
+
+            # Конвертуємо час (віднімаємо 2 години для узгодження часових поясів)
+            adjusted_hour = (input_time.hour - 2) % 24
+            adjusted_time = time(hour=adjusted_hour, minute=input_time.minute)
+
+            # Видаляємо старі нагадування
+            for job in context.job_queue.jobs():
+                job.schedule_removal()
+
+            # Встановлюємо нове нагадування
+            context.job_queue.run_daily(
+                send_task_reminders,
+                time=adjusted_time
+            )
+
+            await update.message.reply_text(
+                f"✅ Час нагадування успішно встановлено на {time_str}.\n"
+                f"(Системний час виконання: {adjusted_time.strftime('%H:%M')})"
+            )
+
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Неправильний формат часу. Використовуйте формат ГГ:ХХ\n"
+                "Наприклад: 18:00"
+            )
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Помилка: {str(e)}")
+        logging.error(f"Помилка встановлення часу нагадування: {e}")
+
+
 # Функція для налаштування щоденного нагадування о 18:00
 def setup_daily_reminder(application):
     # Створення джоба для щоденного нагадування о 18:00
@@ -158,8 +233,8 @@ def setup_daily_reminder(application):
         time=datetime.strptime('16:00', '%H:%M').time()
     )
 
-
-async def test_reminder(update, context):
+@admin_only
+async def test_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Manually trigger a test reminder"""
     try:
         await update.message.reply_text("Generating test reminder...")
@@ -171,6 +246,7 @@ async def test_reminder(update, context):
         await update.message.reply_text(f"Error generating test reminder: {e}")
 
 
+@admin_only
 async def test_message(update, context):
     try:
         await context.bot.send_message(
@@ -195,7 +271,8 @@ def setup_reminder_functionality(app):
         send_task_reminders,
         test_reminder,
         test_message,
-        setup_daily_reminder
+        setup_daily_reminder,
+        set_daily_reminder
     )
     from telegram.ext import CommandHandler
 
@@ -203,6 +280,7 @@ def setup_reminder_functionality(app):
     app.add_handler(CommandHandler('check', check_connect_to_sheet))
     app.add_handler(CommandHandler('test_reminder', test_reminder))
     app.add_handler(CommandHandler('test_message', test_message))
+    app.add_handler(CommandHandler('set_daily_reminder', set_daily_reminder))
 
     # Set up daily reminders
     setup_daily_reminder(app)
