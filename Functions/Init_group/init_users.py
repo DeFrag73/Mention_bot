@@ -3,7 +3,6 @@ import datetime
 from telegram import Update, ChatMemberAdministrator
 from telegram.ext import ContextTypes, CommandHandler
 from telethon import TelegramClient, errors, functions, types
-from telethon.tl.types import InputPeerUser
 from pymongo import MongoClient, UpdateOne
 import asyncio
 import os
