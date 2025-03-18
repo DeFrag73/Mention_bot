@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    env_file:
+      - .env #add .env.dev
+    volumes:
+      - ./:/mentionBot
+    restart: always
