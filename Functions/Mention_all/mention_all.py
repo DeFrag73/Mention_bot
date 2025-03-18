@@ -77,7 +77,7 @@ async def mention_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if chat_users_count == 0:
             await update.message.reply_text(
                 "❗ Увага! Цей чат ще не було ініціалізовано.\n"
-                "Будь ласка, спочатку виконайте команду ініціалізації користувачів."
+                "Будь ласка, спочатку виконайте команду ініціалізації користувачів./init"
             )
             return
 
