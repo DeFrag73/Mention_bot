@@ -3,7 +3,7 @@ module "ec2_instances" {
   version = "5.7.1"
 
   name           = "Mention_Bot-app-instance"
-  instance_count = 2
+  instance_count = 1
 
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type

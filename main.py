@@ -1,4 +1,3 @@
-import logging
 import os
 from dotenv import load_dotenv
 from telegram import Update
@@ -15,16 +14,10 @@ from Functions.Init_group.init_users import get_init_handler, init_user
 from Functions.Mention_all.mention_all import get_mention_handler, react_to_new_messages
 from Functions.Reminder.reminder import setup_reminder_functionality
 from Functions.Anti_spam.antispam_handlers import SpamHandlers, check_spam_decorator
-from Functions.Greating_members_with_birthday.Birthday import setup_birthday_handler, birthday_logger
+from Functions.Greating_members_with_birthday.Birthday import setup_birthday_handler
 from Functions.new_task_notification.Task_notification import TaskNotification
 from Functions.Making_groups_of_peoples.Making_Group import get_group_creation_handler
-
-# Налаштування логування
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+from  Functions.Logger.Logger_config import logger
 
 # Завантаження змінних середовища
 load_dotenv()
@@ -102,11 +95,11 @@ def main():
 
         # Ініціалізація бота
         app = ApplicationBuilder().token(config['TELEGRAM_BOT_TOKEN']).build()
-        birthday_logger.info("Запуск бота...")
+        logger.info("Запуск бота...")
 
         # Налаштування обробників
         setup_birthday_handler(app, config) # /test_birthday
-        birthday_logger.info("Birthday handler встановлено")
+        logger.info("Birthday handler встановлено")
 
         # Налаштування антиспаму
         spam_handlers_bot = SpamHandlers(config['MONGODB_URI'], config['ADMIN_ID'])
@@ -124,7 +117,7 @@ def main():
         ]
 
         # Додаємо handlers для груп окремо
-        group_handlers = get_group_creation_handler()
+        group_handlers = get_group_creation_handler() # /mention_group /create_user_group /
         handlers.extend(group_handlers)  # розширюємо список handlers
 
         for handler in handlers:
@@ -144,14 +137,14 @@ def main():
         setup_reminder_functionality(app) # /check /test_reminder /test_message /set_daily_reminder
         app.add_handler(MessageHandler(filters.ALL, react_to_new_messages))
 
-        birthday_logger.info("Всі обробники успішно встановлено")
-        birthday_logger.info("Запускаємо бота...")
+        logger.info("Всі обробники успішно встановлено")
+        logger.info("Запускаємо бота...")
 
         # Запуск бота
         app.run_polling(allowed_updates=Update.ALL_TYPES)
 
     except Exception as e:
-        birthday_logger.error(f"Критична помилка при запуску бота: {str(e)}", exc_info=True)
+        logger.error(f"Критична помилка при запуску бота: {str(e)}", exc_info=True)
         raise
 
 

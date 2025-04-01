@@ -3,21 +3,13 @@ from datetime import datetime
 import asyncio
 from typing import Optional, List, Dict
 import pytz
-import logging
 from telegram import Bot
 from telegram.ext import Application, CommandHandler
 from pymongo import MongoClient
 import google.generativeai as genai
 
 from Functions.Anti_spam.antispam_handlers import admin_only
-
-# Налаштування логування
-birthday_logger = logging.getLogger('birthday_greetings')
-birthday_logger.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-file_handler = logging.FileHandler('birthday_greetings.log', encoding='utf-8')
-file_handler.setFormatter(formatter)
-birthday_logger.addHandler(file_handler)
+from Functions.Logger.Logger_config import logger
 
 # Константи
 TIMEZONE = pytz.timezone('Europe/Kiev')
@@ -34,9 +26,9 @@ class BirthdayGreeter:
 
         # Налаштування Gemini
         genai.configure(api_key=gemini_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-2.0-flash')
 
-        birthday_logger.info("BirthdayGreeter успішно ініціалізовано")
+        logger.info("BirthdayGreeter успішно ініціалізовано")
 
     async def generate_birthday_message(self, first_name: str, telegram_username: Optional[str] = None) -> str:
         try:
@@ -61,7 +53,7 @@ class BirthdayGreeter:
                 return self._get_default_greeting(mention, first_name)
 
         except Exception as e:
-            birthday_logger.error(f"Помилка генерації привітання: {str(e)}")
+            logger.error(f"Помилка генерації привітання: {str(e)}")
             return self._get_default_greeting(mention, first_name)
 
     def _get_default_greeting(self, mention: str, first_name: str) -> str:
@@ -74,7 +66,7 @@ class BirthdayGreeter:
         """Отримує список людей у яких сьогодні день народження"""
         today = datetime.now(TIMEZONE)
         today_format = f"{today.day:02d}.{today.month:02d}"  # Формат "DD.MM"
-        birthday_logger.info(f"Пошук іменинників для дати: {today_format}")
+        logger.info(f"Пошук іменинників для дати: {today_format}")
 
         try:
             # Використовуємо регулярний вираз для порівняння дати
@@ -91,13 +83,13 @@ class BirthdayGreeter:
             }]
 
             result = list(self.members_collection.aggregate(pipeline))
-            birthday_logger.info(f"Знайдено {len(result)} іменинників")
+            logger.info(f"Знайдено {len(result)} іменинників")
             if result:
-                birthday_logger.info(f"Знайдені іменинники: {[person.get('full_name') for person in result]}")
+                logger.info(f"Знайдені іменинники: {[person.get('full_name') for person in result]}")
             return result
 
         except Exception as e:
-            birthday_logger.error(f"Помилка при пошуку іменинників: {str(e)}")
+            logger.error(f"Помилка при пошуку іменинників: {str(e)}")
             return []
 
     async def send_birthday_greetings(self, bot: Bot) -> None:
@@ -105,7 +97,7 @@ class BirthdayGreeter:
         try:
             birthday_people = await self.get_birthday_people()
             if not birthday_people:
-                birthday_logger.info("Сьогодні немає іменинників")
+                logger.info("Сьогодні немає іменинників")
                 return
 
             for person in birthday_people:
@@ -119,15 +111,15 @@ class BirthdayGreeter:
                         text=greeting,
                         parse_mode='HTML'
                     )
-                    birthday_logger.info(f"Надіслано привітання для {first_name}")
+                    logger.info(f"Надіслано привітання для {first_name}")
                 except Exception as e:
-                    birthday_logger.error(f"Помилка надсилання привітання: {str(e)}")
+                    logger.error(f"Помилка надсилання привітання: {str(e)}")
         except Exception as e:
-            birthday_logger.error(f"Помилка обробки привітань: {str(e)}")
+            logger.error(f"Помилка обробки привітань: {str(e)}")
 
     async def birthday_check_loop(self, bot: Bot):
         """Запускає цикл перевірки днів народження"""
-        birthday_logger.info(
+        logger.info(
             f"Запуск циклу перевірки з налаштуваннями: TIMEZONE={TIMEZONE}, CHECK_HOUR={CHECK_HOUR}, CHECK_MINUTE={CHECK_MINUTE}")
 
         # Початкова перевірка при запуску
@@ -146,44 +138,44 @@ class BirthdayGreeter:
                     # Чекаємо 1 хвилину перед наступною перевіркою
                     await asyncio.sleep(60)
             except Exception as e:
-                birthday_logger.error(f"Помилка в циклі перевірки: {str(e)}")
+                logger.error(f"Помилка в циклі перевірки: {str(e)}")
                 await asyncio.sleep(60)
 
 
 @admin_only
 async def test_birthday_command(update, context):
     """Обробник команди /test_birthday"""
-    birthday_logger.info(f"Отримано команду /test_birthday від користувача {update.effective_user.id}")
+    logger.info(f"Отримано команду /test_birthday від користувача {update.effective_user.id}")
 
     birthday_greeter = context.bot_data.get('birthday_greeter')
     if not birthday_greeter:
         error_msg = "❌ Система привітань не ініціалізована"
-        birthday_logger.error(error_msg)
+        logger.error(error_msg)
         await update.message.reply_text(error_msg)
         return
 
     try:
         # Перевіряємо підключення до MongoDB
-        birthday_logger.info("Перевірка підключення до бази даних...")
+        logger.info("Перевірка підключення до бази даних...")
         await update.message.reply_text("🔄 Перевіряю наявність іменинників...")
 
         birthday_people = await birthday_greeter.get_birthday_people()
-        birthday_logger.info(f"Знайдено {len(birthday_people)} іменинників")
+        logger.info(f"Знайдено {len(birthday_people)} іменинників")
 
         if not birthday_people:
             msg = "📝 Сьогодні немає іменинників"
-            birthday_logger.info(msg)
+            logger.info(msg)
             await update.message.reply_text(msg)
             return
 
         # Якщо є іменинники, надсилаємо привітання
-        birthday_logger.info("Надсилаю привітання...")
+        logger.info("Надсилаю привітання...")
         await birthday_greeter.send_birthday_greetings(context.bot)
         await update.message.reply_text("✅ Тестове привітання надіслано!")
 
     except Exception as e:
         error_msg = f"❌ Помилка при виконанні тесту: {str(e)}"
-        birthday_logger.error(error_msg, exc_info=True)
+        logger.error(error_msg, exc_info=True)
         await update.message.reply_text(error_msg)
 
 
@@ -212,7 +204,7 @@ def setup_birthday_handler(application: Application, config: dict) -> None:
             when=0  # запускаємо одразу
         )
 
-        birthday_logger.info("Система привітань успішно налаштована")
+        logger.info("Система привітань успішно налаштована")
     except Exception as e:
-        birthday_logger.error(f"Помилка налаштування системи привітань: {str(e)}")
+        logger.error(f"Помилка налаштування системи привітань: {str(e)}")
         raise

@@ -8,7 +8,10 @@ from time import time
 import os
 from dotenv import load_dotenv
 
+from Functions.Logger.Logger_config import logger
+
 load_dotenv()
+
 
 def check_spam_decorator(func):
     @functools.wraps(func)
@@ -26,7 +29,6 @@ def check_spam_decorator(func):
         return await func(update, context, *args, **kwargs)
 
     return wrapper
-
 
 
 def admin_only(func):
@@ -48,7 +50,6 @@ def admin_only(func):
     return wrapper
 
 
-
 class SpamHandlers:
     def __init__(self, mongodb_uri: str, admin_id: int):
         self.anti_spam = AntiSpam(
@@ -59,7 +60,6 @@ class SpamHandlers:
         )
         self.admin_id = admin_id
         self.muted_users = {}
-
 
     async def check_spam(self, update: Update) -> bool:
         """Перевірка на спам з мутом користувача"""
@@ -104,10 +104,10 @@ class SpamHandlers:
                     return True
 
                 except TimedOut:
-                    print("Помилка таймауту при встановленні мута")
+                    logger.error("Помилка таймауту при встановленні мута")
                     return False
                 except Exception as e:
-                    print(f"Помилка при встановленні мута: {e}")
+                    logger.error(f"Помилка при встановленні мута: {e}")
                     return False
 
         return False
@@ -134,7 +134,7 @@ class SpamHandlers:
                 del self.muted_users[user_id]
 
         except Exception as e:
-            print(f"Помилка при знятті мута: {e}")
+            logger.error(f"Помилка при знятті мута: {e}")
 
     @admin_only
     async def whitelist_add(self, update: Update, context: ContextTypes.DEFAULT_TYPE):

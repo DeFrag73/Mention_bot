@@ -1,4 +1,3 @@
-import logging
 from telegram import Update, ReactionTypeEmoji
 from telegram.ext import (
     ContextTypes, CommandHandler, MessageHandler, filters
@@ -10,6 +9,7 @@ import asyncio
 import time
 from dotenv import load_dotenv
 from Functions.Anti_spam.antispam_handlers import check_spam_decorator, admin_only
+from Functions.Logger.Logger_config import logger
 
 load_dotenv()
 
@@ -108,7 +108,7 @@ async def mention_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 # asyncio.create_task(delete_message_after_delay(sent_message, 10))
             except Exception as mention_error:
-                logging.warning(f"Помилка Markdown: {mention_error}")
+                logger.warning(f"Помилка Markdown: {mention_error}")
                 sent_message = await update.message.reply_text(" ".join(chunk))
                 # asyncio.create_task(delete_message_after_delay(sent_message, 10))
 
@@ -119,7 +119,7 @@ async def mention_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
         asyncio.create_task(delete_message_after_delay(sent_message, 10))
 
     except Exception as e:
-        logging.error(f"Помилка при згадуванні: {e}")
+        logger.error(f"Помилка при згадуванні: {e}")
         await update.message.reply_text(f"❌ Виникла помилка: {str(e)}")
 
     finally:

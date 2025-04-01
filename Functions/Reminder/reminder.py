@@ -1,17 +1,15 @@
 import gspread
 from google.oauth2.service_account import Credentials
 import os
-import logging
 from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, Application, CommandHandler, ContextTypes
 from telegram import Bot
 from telegram import Update
-import asyncio
 from datetime import datetime, time
 import traceback
 import pymongo
 from Functions.Anti_spam.antispam_handlers import check_spam_decorator, admin_only
-
+from Functions.Logger.Logger_config import logger
 load_dotenv()
 
 CREDENTIALS_FILE = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
@@ -27,25 +25,22 @@ def connect_to_mongo():
         client = pymongo.MongoClient(MONGO_URI)
         db = client[MONGO_DATABASE]
         users_collection = db['INFO-Members']
-        logging.info("Successfully connected to MongoDB")
+        logger.info("Successfully connected to MongoDB")
 
         # Діагностика
-        print("Перевірка підключення до MongoDB...")
+        logger.info("Перевірка підключення до MongoDB...")
         collections = db.list_collection_names()
-        print(f"Доступні колекції: {collections}")
+        logger.info(f"Доступні колекції: {collections}")
 
         members_count = users_collection.count_documents({})
-        print(f"Кількість документів в колекції INFO-Members: {members_count}")
+        logger.info(f"Кількість документів в колекції INFO-Members: {members_count}")
 
         sample_doc = users_collection.find_one()
-        print(f"Приклад документа: {sample_doc}")
 
         return db, users_collection  # повертаємо кортеж з обома об'єктами
     except Exception as e:
-        logging.error(f"MongoDB connection error: {e}")
-        logging.error(traceback.format_exc())
-        print(f"Помилка при підключенні до MongoDB: {str(e)}")
-        print(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Помилка при підключенні до MongoDB: {e}")
+        logger.error(traceback.format_exc())
         raise
 
 
@@ -161,15 +156,15 @@ async def send_task_reminders(context=None, force_test=False):
                         chat_id=INFO_CHAT_ID,
                         text=reminder
                     )
-                    logging.info(f"Sent reminder: {reminder[:50]}...")
+                    logger.info(f"Sent reminder: {reminder[:50]}...")
                 except Exception as send_error:
-                    logging.error(f"Failed to send reminder: {send_error}")
+                    logger.error(f"Failed to send reminder: {send_error}")
         else:
-            logging.info("No reminders to send")
+            logger.info("No reminders to send")
 
     except Exception as e:
-        logging.error(f"Reminder generation error: {e}")
-        logging.error(traceback.format_exc())
+        logger.error(f"Reminder generation error: {e}")
+        logger.error(traceback.format_exc())
 
 
 @admin_only
@@ -222,7 +217,7 @@ async def set_daily_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     except Exception as e:
         await update.message.reply_text(f"❌ Помилка: {str(e)}")
-        logging.error(f"Помилка встановлення часу нагадування: {e}")
+        logger.error(f"Помилка встановлення часу нагадування: {e}")
 
 
 # Функція для налаштування щоденного нагадування о 18:00
@@ -240,9 +235,9 @@ async def test_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Generating test reminder...")
         await send_task_reminders(force_test=True)
         await update.message.reply_text("Test reminder generation completed!")
-        logging.info("Manual test reminder triggered")
+        logger.info("Manual test reminder triggered")
     except Exception as e:
-        logging.error(f"Test reminder error: {e}")
+        logger.error(f"Test reminder error: {e}")
         await update.message.reply_text(f"Error generating test reminder: {e}")
 
 
@@ -253,10 +248,10 @@ async def test_message(update, context):
             chat_id=INFO_CHAT_ID,
             text="This is a test message from the reminder bot."
         )
-        logging.info("Test message sent successfully.")
+        logger.info("Test message sent successfully.")
     except Exception as e:
-        logging.error(f"Error sending test message: {e}")
-        logging.error(traceback.format_exc())
+        logger.error(f"Error sending test message: {e}")
+        logger.error(traceback.format_exc())
         await update.message.reply_text(f"Error sending test message: {e}")
 
 

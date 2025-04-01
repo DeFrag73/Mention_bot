@@ -1,6 +1,9 @@
 import os
+import re
 from datetime import datetime
 from typing import Dict, List, Union
+
+import telegram
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
@@ -15,11 +18,11 @@ from dotenv import load_dotenv
 from bson import ObjectId
 from functools import wraps
 from typing import Callable, Any
-from aiogram import types
+import asyncio
 
 from Functions.Anti_spam.anti_spam import AntiSpam
 from Functions.Anti_spam.antispam_handlers import check_spam_decorator, admin_only
-
+from Functions.Logger.Logger_config import logger
 
 load_dotenv()
 
@@ -31,6 +34,7 @@ WAIT_GROUP_NAME, SELECT_USERS = range(2)
 
 # Словник для зберігання тимчасових даних розмови
 user_data_dict: Dict[int, dict] = {}
+
 
 def check_spam(f: Callable) -> Callable:
     """
@@ -59,6 +63,7 @@ def check_spam(f: Callable) -> Callable:
 
     return wrapper
 
+
 class GroupCreationManager:
     def __init__(self, mongodb_uri: str, database_name: str):
         self.client = MongoClient(mongodb_uri)
@@ -77,7 +82,6 @@ class GroupCreationManager:
     @check_spam
     async def start_group_creation(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Початок створення групи"""
-        # Перевіряємо чи є користувач адміністратором
         user = update.effective_user
         chat = update.effective_chat
 
@@ -93,7 +97,10 @@ class GroupCreationManager:
         # Зберігаємо chat_id для подальшого використання
         user_data_dict[user.id] = {'chat_id': chat.id}
 
-        await update.message.reply_text(
+        # Зберігаємо ID повідомлення з командою для подальшого видалення
+        user_data_dict[user.id]['messages_to_delete'] = [update.message.message_id]
+
+        message = await update.message.reply_text(
             "📝 Будь ласка, введіть назву нової групи користувачів.\n"
             "Вимоги до назви:\n"
             "• Довжина від 3 до 30 символів\n"
@@ -101,6 +108,9 @@ class GroupCreationManager:
             "• Без спеціальних символів\n\n"
             "Для скасування використайте команду /cancel_create_group"
         )
+
+        # Зберігаємо ID повідомлення з інструкцією
+        user_data_dict[user.id]['messages_to_delete'].append(message.message_id)
 
         return WAIT_GROUP_NAME
 
@@ -110,25 +120,53 @@ class GroupCreationManager:
         group_name = update.message.text.strip()
         user_id = update.effective_user.id
 
-        # Зберігаємо назву групи у словнику
+        # Зберігаємо ID повідомлення з назвою групи
+        user_data_dict[user_id]['messages_to_delete'].append(update.message.message_id)
+
+        # Перевірка довжини
+        if len(group_name) < 3 or len(group_name) > 30:
+            logger.warning(f"Некоректна довжина назви групи: {group_name}")
+            message = await update.message.reply_text(
+                "⚠️ Назва групи повинна бути від 3 до 30 символів.\n"
+                "Спробуйте ще раз або використайте /cancel_create_group для скасування."
+            )
+            user_data_dict[user_id]['messages_to_delete'].append(message.message_id)
+            return WAIT_GROUP_NAME
+
+        # Перевірка на допустимі символи
+        if not re.match(r'^[а-яА-Яa-zA-Z0-9\-_]+$', group_name):
+            logger.warning(f"Недопустимі символи в назві групи: {group_name}")
+            message = await update.message.reply_text(
+                "⚠️ Назва групи може містити лише літери, цифри та символи - _\n"
+                "Спробуйте ще раз або використайте /cancel_create_group для скасування."
+            )
+            user_data_dict[user_id]['messages_to_delete'].append(message.message_id)
+            return WAIT_GROUP_NAME
+
+        # Перевірка чи не існує вже така група
+        existing_group = self.groups_collection.find_one({
+            'chat_id': user_data_dict[user_id]['chat_id'],
+            'name': group_name
+        })
+
+        if existing_group:
+            logger.warning(f"Спроба створити групу з існуючою назвою: {group_name}")
+            message = await update.message.reply_text(
+                "⚠️ Група з такою назвою вже існує.\n"
+                "Будь ласка, виберіть іншу назву або використайте /cancel_create_group для скасування."
+            )
+            user_data_dict[user_id]['messages_to_delete'].append(message.message_id)
+            return WAIT_GROUP_NAME
+
+        # Якщо всі перевірки пройдені
         user_data_dict[user_id]['group_name'] = group_name
 
-        # Додайте на початку методу
-        print(f"Шукаємо користувачів для chat_id: {user_data_dict[user_id]['chat_id']}")
         test_user = self.users_collection.find_one()
-        print(f"Тестовий користувач з бази: {test_user}")
-
-        # ... (код валідації назви групи) ...
-
-        # Перед пошуком користувачів
-        print(f"Параметри пошуку: chat_id = {user_data_dict[user_id]['chat_id']}")
 
         # Змініть запит до бази даних
         chat_users = list(self.users_collection.find({
             'chat_id': int(user_data_dict[user_id]['chat_id'])  # Конвертуємо в int
         }))
-        print(f"Знайдено користувачів: {len(chat_users)}")
-        print(f"Користувачі: {chat_users}")  # Подивимось які дані повертаються
 
         # Створюємо клавіатуру для вибору користувачів
         keyboard = []
@@ -170,6 +208,7 @@ class GroupCreationManager:
         )
 
         user_data_dict[user_id]['message_id'] = message.message_id
+        user_data_dict[user_id]['messages_to_delete'].append(message.message_id)
         user_data_dict[user_id]['selected_users'] = set()
 
         return SELECT_USERS
@@ -182,6 +221,7 @@ class GroupCreationManager:
 
         if query.data == "cancel":
             await query.message.edit_text("❌ Створення групи скасовано.")
+            # Не видаляємо повідомлення при скасуванні
             return ConversationHandler.END
 
         if query.data == "confirm":
@@ -220,10 +260,42 @@ class GroupCreationManager:
                 # Додаємо групу до колекції груп
                 self.groups_collection.insert_one(group_document)
 
-                await query.message.edit_text(
+                # Відправляємо повідомлення про успішне створення
+                success_message = await query.message.edit_text(
                     f"✅ Група '{user_data_dict[user_id]['group_name']}' успішно створена!\n"
                     f"Додано користувачів: {len(unique_users)}"
                 )
+
+                # Видаляємо всі повідомлення, пов'язані з створенням групи
+                await asyncio.sleep(2)
+                await self._delete_creation_messages(context, chat_id, user_id)
+
+                try:
+                    query = update.callback_query
+                    user_id = query.from_user.id
+
+                    # Перевірка наявності даних користувача
+                    if user_id not in user_data_dict:
+                        await query.answer("Сесія створення групи закінчилась. Почніть спочатку.")
+                        return ConversationHandler.END
+
+                    # Перевірка наявності повідомлення перед редагуванням
+                    try:
+                        await query.message.edit_text(
+                            text=f"✅ Група '{user_data_dict[user_id]['group_name']}' успішно створена!\n"
+                        )
+                    except telegram.error.BadRequest as e:
+                        if "Message to edit not found" in str(e):
+                            # Якщо повідомлення не знайдено, надсилаємо нове
+                            await query.message.reply_text(
+                                text=f"✅ Група '{user_data_dict[user_id]['group_name']}' успішно створена!\n"
+                            )
+
+                except Exception as e:
+                    await query.message.reply_text("Сталася помилка. Спробуйте створити групу знову.")
+                    logger.error(f"Помилка в handle_user_selection: {str(e)}")
+                    return ConversationHandler.END
+
                 return ConversationHandler.END
 
             except Exception as e:
@@ -271,6 +343,18 @@ class GroupCreationManager:
 
             await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
             return SELECT_USERS
+
+    async def _delete_creation_messages(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> None:
+        """Видаляє всі повідомлення, пов'язані з процесом створення групи"""
+        if user_id in user_data_dict and 'messages_to_delete' in user_data_dict[user_id]:
+            for message_id in user_data_dict[user_id]['messages_to_delete']:
+                try:
+                    await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+                except Exception as e:
+                    logger.warning(f"Не вдалося видалити повідомлення {message_id}: {str(e)}")
+
+            # Очищаємо дані користувача
+            del user_data_dict[user_id]
 
     @check_spam
     async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -378,32 +462,49 @@ class GroupCreationManager:
                     await query.message.edit_text("❌ Група не знайдена або не має учасників!")
                     return
 
+                def safe_name(name):
+                    if name is None:
+                        return "не знайдено"
+                    return re.sub(r'[_*\[\]()~`>#+-=|{}.!]', '', name).strip()
+
                 # Формуємо список згадувань
                 mentions = []
                 for member in group['members']:
                     if member.get('username'):
                         mentions.append(f"@{member['username']}")
+                    elif member.get('first_name'):
+                        full_name = safe_name(member.get('first_name', ''))
+                        mentions.append(f"[{full_name}](tg://user?id={member['user_id']})")
                     else:
-                        # Екрануємо спеціальні символи в імені
-                        safe_name = member.get('first_name', 'Користувач').replace('[', '\\[').replace(']', '\\]')
-                        mentions.append(f"[{safe_name}](tg://user?id={member['user_id']})")
+                        mentions.append(f"[Користувач](tg://user?id={member['user_id']})")
 
-                # Відправляємо повідомлення зі згадуваннями
-                mention_text = f"👥 Група «{group['name']}»:\n"
-                for member in group['members']:
-                    if member.get('username'):
-                        mention_text += f"@{member['username']} "
-                    else:
-                        mention_text += f"{member.get('first_name', 'Користувач')} "
-
+                # Видаляємо повідомлення з кнопками
                 await query.message.edit_text(
-                    mention_text.strip(),
-                    disable_web_page_preview=True
+                    text=f"👥 Група «{group['name']}»:",
+                    parse_mode='Markdown'
                 )
 
+                # Розділяємо згадування на частини по 50 користувачів
+                max_mentions_per_message = 50
+                for i in range(0, len(mentions), max_mentions_per_message):
+                    chunk = mentions[i:i + max_mentions_per_message]
+                    try:
+                        await update.callback_query.message.reply_text(
+                            text=" ".join(chunk),
+                            parse_mode='Markdown'
+                        )
+                    except Exception as mention_error:
+                        logger.warning(f"Помилка Markdown: {mention_error}")
+                        # Якщо виникла помилка з Markdown, відправляємо без форматування
+                        await update.callback_query.message.reply_text(
+                            text=" ".join(chunk)
+                        )
 
             except Exception as e:
-                await query.message.edit_text(f"❌ Помилка при згадуванні: {str(e)}")
+                logger.error(f"Помилка при згадуванні: {e}")
+                await update.callback_query.message.reply_text(
+                    text=f"❌ Помилка при згадуванні: {str(e)}"
+                )
 
     @check_spam
     async def show_groups(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

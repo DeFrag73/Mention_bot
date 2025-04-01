@@ -4,7 +4,8 @@ services:
   bot:
     build: .
     env_file:
-      - .env #add .env.dev
+      - .env
     volumes:
-      - ./:/mentionBot
+      - ./:/mentionBot:rw  # додаємо явні права на запис
     restart: always
+    user: root
