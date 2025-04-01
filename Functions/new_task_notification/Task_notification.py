@@ -9,6 +9,7 @@ from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
 from Functions.Anti_spam.antispam_handlers import admin_only
 from Functions.Reminder.reminder import connect_to_sheet, connect_to_mongo
+from Functions.Logger.Logger_config import logger
 
 
 class TaskNotification:
@@ -97,14 +98,14 @@ class TaskNotification:
                     })
 
         except Exception as e:
-            print(f"Помилка при перевірці завдань: {e}")
+            logger.error(f"Помилка при перевірці завдань: {e}")
 
     async def handle_task_button(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query
         action, row_idx = query.data.split('_')
         user = query.from_user
 
-        print(f"Отримано запит від користувача: {user.id}")
+        logger.info(f"Отримано запит від користувача: {user.id}")
 
         # Спочатку перевіряємо чи є користувач в базі
         member = self.users_collection.find_one({
@@ -130,7 +131,7 @@ class TaskNotification:
             text="⏳ Ваш запит надіслано адміністратору. Очікуйте на рішення."
         )
 
-        print(f"Відправлено повідомлення про очікування: {waiting_message.message_id}")
+        logger.debug(f"Відправлено повідомлення про очікування: {waiting_message.message_id}")
 
         admin_message = (
             f"Користувач {user.full_name} (@{user.username}) "
@@ -151,9 +152,9 @@ class TaskNotification:
                     ]
                 ])
             )
-            print(f"Відправлено повідомлення адміну: {admin_msg.message_id}")
+            logger.debug(f"Відправлено повідомлення адміну: {admin_msg.message_id}")
         except Exception as e:
-            print(f"Помилка при відправці повідомлення адміну: {e}")
+            logger.error(f"Помилка при відправці повідомлення адміну: {e}")
 
     async def handle_admin_decision(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query
@@ -178,7 +179,7 @@ class TaskNotification:
                             text="✅ Ваш запит схвалено!" if decision == "confirm" else "❌ Ваш запит відхилено"
                         )
                     except:
-                        pass # Ігноруємо помилки при видаленні
+                        pass  # Ігноруємо помилки при видаленні
                     del self.pending_messages[message_key]
 
                 # Надсилаємо нове повідомлення про рішення
@@ -198,7 +199,7 @@ class TaskNotification:
                 )
 
         except Exception as e:
-            print(f"Помилка при відправці повідомлення користувачу: {e}")
+            logger.error(f"Помилка при відправці повідомлення користувачу: {e}")
 
         if decision == 'confirm':
             try:
@@ -261,7 +262,7 @@ class TaskNotification:
                                 except telegram.error.BadRequest as e:
                                     if "Message to delete not found" in str(e):
                                         self.task_messages.delete_one({'row_index': int(row_idx)})
-                                        print(f"Повідомлення вже було видалено: {task_message['message_id']}")
+                                        logger.warning(f"Повідомлення вже було видалено: {task_message['message_id']}")
                                     else:
                                         raise e
                             else:
@@ -286,7 +287,7 @@ class TaskNotification:
                                     )
 
                     except Exception as e:
-                        print(f"Помилка при оновленні повідомлення: {e}")
+                        logger.error(f"Помилка при оновленні повідомлення: {e}")
 
                 # Оновлюємо статус в таблиці
                 self.sheet.update_cell(int(row_idx), статус_col, 'Виконується')
@@ -298,7 +299,7 @@ class TaskNotification:
                 )
 
             except Exception as e:
-                print(f"Помилка при підтвердженні завдання: {e}")
+                logger.error(f"Помилка при підтвердженні завдання: {e}")
                 await query.message.edit_text(f"Сталася помилка при обробці запиту: {str(e)}")
 
         else:  # reject
@@ -333,9 +334,9 @@ class TaskNotification:
                     if task.get('designer') and task.get('writer'):
                         self.task_messages.delete_one({'_id': task['_id']})
 
-            print("Очищення бази даних завершено успішно")
+            logger.info("Очищення бази даних завершено успішно")
         except Exception as e:
-            print(f"Помилка при очищенні бази даних: {e}")
+            logger.error(f"Помилка при очищенні бази даних: {e}")
 
     async def get_thread_info(self, update: Update, context: CallbackContext) -> None:
         """Команда для отримання інформації про гілку"""

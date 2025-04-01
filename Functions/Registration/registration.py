@@ -12,17 +12,7 @@ from pymongo.errors import ConnectionFailure
 import os
 from dotenv import load_dotenv
 from Functions.Anti_spam.antispam_handlers import check_spam_decorator, admin_only
-
-# Налаштування логування
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        # logging.FileHandler('bot_logs.log', encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+from Functions.Logger.Logger_config import logger
 
 # Стани для ConversationHandler
 NAME, PATRONYMIC, SURNAME, GROUP, EMPLOYMENT, BIRTHDAY = range(6)

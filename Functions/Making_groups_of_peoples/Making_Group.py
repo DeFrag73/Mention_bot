@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime
 from typing import Dict, List, Union
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -19,7 +20,7 @@ from aiogram import types
 
 from Functions.Anti_spam.anti_spam import AntiSpam
 from Functions.Anti_spam.antispam_handlers import check_spam_decorator, admin_only
-
+from  Functions.Logger.Logger_config import logger
 
 load_dotenv()
 
@@ -113,22 +114,12 @@ class GroupCreationManager:
         # Зберігаємо назву групи у словнику
         user_data_dict[user_id]['group_name'] = group_name
 
-        # Додайте на початку методу
-        print(f"Шукаємо користувачів для chat_id: {user_data_dict[user_id]['chat_id']}")
         test_user = self.users_collection.find_one()
-        print(f"Тестовий користувач з бази: {test_user}")
-
-        # ... (код валідації назви групи) ...
-
-        # Перед пошуком користувачів
-        print(f"Параметри пошуку: chat_id = {user_data_dict[user_id]['chat_id']}")
 
         # Змініть запит до бази даних
         chat_users = list(self.users_collection.find({
             'chat_id': int(user_data_dict[user_id]['chat_id'])  # Конвертуємо в int
         }))
-        print(f"Знайдено користувачів: {len(chat_users)}")
-        print(f"Користувачі: {chat_users}")  # Подивимось які дані повертаються
 
         # Створюємо клавіатуру для вибору користувачів
         keyboard = []
@@ -378,32 +369,49 @@ class GroupCreationManager:
                     await query.message.edit_text("❌ Група не знайдена або не має учасників!")
                     return
 
+                def safe_name(name):
+                    if name is None:
+                        return "не знайдено"
+                    return re.sub(r'[_*\[\]()~`>#+-=|{}.!]', '', name).strip()
+
                 # Формуємо список згадувань
                 mentions = []
                 for member in group['members']:
                     if member.get('username'):
                         mentions.append(f"@{member['username']}")
+                    elif member.get('first_name'):
+                        full_name = safe_name(member.get('first_name', ''))
+                        mentions.append(f"[{full_name}](tg://user?id={member['user_id']})")
                     else:
-                        # Екрануємо спеціальні символи в імені
-                        safe_name = member.get('first_name', 'Користувач').replace('[', '\\[').replace(']', '\\]')
-                        mentions.append(f"[{safe_name}](tg://user?id={member['user_id']})")
+                        mentions.append(f"[Користувач](tg://user?id={member['user_id']})")
 
-                # Відправляємо повідомлення зі згадуваннями
-                mention_text = f"👥 Група «{group['name']}»:\n"
-                for member in group['members']:
-                    if member.get('username'):
-                        mention_text += f"@{member['username']} "
-                    else:
-                        mention_text += f"{member.get('first_name', 'Користувач')} "
-
+                # Видаляємо повідомлення з кнопками
                 await query.message.edit_text(
-                    mention_text.strip(),
-                    disable_web_page_preview=True
+                    text=f"👥 Група «{group['name']}»:",
+                    parse_mode='Markdown'
                 )
 
+                # Розділяємо згадування на частини по 50 користувачів
+                max_mentions_per_message = 50
+                for i in range(0, len(mentions), max_mentions_per_message):
+                    chunk = mentions[i:i + max_mentions_per_message]
+                    try:
+                        await update.callback_query.message.reply_text(
+                            text=" ".join(chunk),
+                            parse_mode='Markdown'
+                        )
+                    except Exception as mention_error:
+                        logger.warning(f"Помилка Markdown: {mention_error}")
+                        # Якщо виникла помилка з Markdown, відправляємо без форматування
+                        await update.callback_query.message.reply_text(
+                            text=" ".join(chunk)
+                        )
 
             except Exception as e:
-                await query.message.edit_text(f"❌ Помилка при згадуванні: {str(e)}")
+                logger.error(f"Помилка при згадуванні: {e}")
+                await update.callback_query.message.reply_text(
+                    text=f"❌ Помилка при згадуванні: {str(e)}"
+                )
 
     @check_spam
     async def show_groups(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

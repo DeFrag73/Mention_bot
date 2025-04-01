@@ -5,9 +5,12 @@ from typing import Tuple
 import os
 from dotenv import load_dotenv
 
+from Functions.Logger.Logger_config import logger
+
 load_dotenv()
 
 DB_NAME = os.getenv('MONGO_DATABASE')
+
 
 class AntiSpam:
     def __init__(self, mongodb_uri: str, messages_limit=5, time_window=5, ban_time=30):
@@ -37,7 +40,7 @@ class AntiSpam:
                 int(k): v for k, v in spam_data.get('warning_counts', {}).items()
             })
         except Exception as e:
-            print(f"Помилка завантаження даних з MongoDB: {e}")
+            logger.error(f"Помилка завантаження даних з MongoDB: {e}")
             self.banned_users = {}
             self.warning_counts = defaultdict(int)
 
@@ -55,7 +58,7 @@ class AntiSpam:
                 upsert=True
             )
         except Exception as e:
-            print(f"Помилка збереження даних в MongoDB: {e}")
+            logger.error(f"Помилка збереження даних в MongoDB: {e}")
 
     def add_to_whitelist(self, user_id: int) -> None:
         """Додавання користувача до білого списку"""
@@ -66,7 +69,7 @@ class AntiSpam:
                 upsert=True
             )
         except Exception as e:
-            print(f"Помилка додавання до білого списку: {e}")
+            logger.error(f"Помилка додавання до білого списку: {e}")
 
     def remove_from_whitelist(self, user_id: int) -> None:
         """Видалення користувача з білого списку"""
@@ -76,7 +79,7 @@ class AntiSpam:
                 {'$pull': {'users': user_id}}
             )
         except Exception as e:
-            print(f"Помилка видалення з білого списку: {e}")
+            logger.error(f"Помилка видалення з білого списку: {e}")
 
     def is_whitelisted(self, user_id: int) -> bool:
         """Перевірка чи користувач в білому списку"""
@@ -84,7 +87,7 @@ class AntiSpam:
             whitelist = self.whitelist_collection.find_one({'_id': 'whitelist'})
             return whitelist and user_id in whitelist.get('users', [])
         except Exception as e:
-            print(f"Помилка перевірки білого списку: {e}")
+            logger.error(f"Помилка перевірки білого списку: {e}")
             return False
 
     def is_spam(self, user_id: int) -> Tuple[bool, str]:
