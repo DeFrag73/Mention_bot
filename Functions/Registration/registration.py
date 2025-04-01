@@ -15,7 +15,7 @@ from Functions.Anti_spam.antispam_handlers import check_spam_decorator, admin_on
 from Functions.Logger.Logger_config import logger
 
 # Стани для ConversationHandler
-NAME, PATRONYMIC, SURNAME, GROUP, EMPLOYMENT, BIRTHDAY = range(6)
+NAME, PATRONYMIC, SURNAME, GROUP, EMPLOYMENT, BIRTHDAY, PHONE = range(7)
 
 load_dotenv()
 
@@ -51,6 +51,7 @@ MIN_AGE = 16
 GROUP_PATTERN = r'^\d{3}$'
 UKRAINIAN_NAME_PATTERN = r'^[А-ЩЬЮЯҐЄІЇа-щьюяґєії\'\-]+$'
 DATE_PATTERN = r'^(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])\.\d{4}$'
+PHONE_PATTERN = r'^(?:\+380|380|0)\d{9}$'
 
 # Константи для напрямків роботи
 EMPLOYMENT_TYPES = {
@@ -69,7 +70,8 @@ ERROR_MESSAGES = {
     'date_format': "❌ Помилка: Некоректний формат дати!",
     'future_date': "❌ Помилка: Дата народження не може бути в майбутньому!",
     'min_age': "❌ Помилка: Вік повинен бути не менше 16 років!",
-    'group_format': "❌ Помилка: Номер групи має складатися з трьох цифр!"
+    'group_format': "❌ Помилка: Номер групи має складатися з трьох цифр!",
+    'phone_format': "❌ Помилка: Некоректний формат номера телефону! Введіть у форматі +380XXXXXXXXX, 380XXXXXXXXX або 0XXXXXXXXX"
 }
 
 @check_spam_decorator
@@ -301,28 +303,10 @@ async def get_group(update: Update, context: CallbackContext) -> int:
 
         context.user_data['group'] = user_input
 
-        keyboard = [
-            [
-                InlineKeyboardButton("Копірайтинг ✍️", callback_data="copywriting"),
-                InlineKeyboardButton("Відео монтаж 🎥", callback_data="video"),
-            ],
-            [
-                InlineKeyboardButton("Дизайнер 🎨", callback_data="design"),
-                InlineKeyboardButton("Фотограф 📸", callback_data="photo")
-            ],
-            [InlineKeyboardButton("Завершити вибір ✅", callback_data="done")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        message = await update.message.reply_text(
-            "Оберіть, що вам більше подобається (можна обрати декілька варіантів), \n\n"
-            "Щоб скасувати вибір натисніть на напрямок ще раз:",
-            reply_markup=reply_markup
+        await update.message.reply_text(
+            "Будь ласка, введіть ваш номер телефону у форматі:\n"
+            "+380XXXXXXXXX, 380XXXXXXXXX або 0XXXXXXXXX"
         )
-        logger.info(f"Відправлено клавіатуру з напрямками користувачу {update.effective_user.id}")
-
-        context.user_data['message_id'] = message.message_id
-        context.user_data['employment_types'] = []
 
     except Exception as e:
         logger.error(f"Помилка при роботі з базою даних: {e}")
@@ -332,9 +316,59 @@ async def get_group(update: Update, context: CallbackContext) -> int:
     finally:
         client_mongo.close()
 
+    return PHONE
+
+@check_spam_decorator
+async def get_phone(update: Update, context: CallbackContext) -> int:
+    user_input = update.message.text
+    logger.info(f"Отримано номер телефону від користувача {update.effective_user.id}: {user_input}")
+
+    if user_input.lower() == 'скасувати':
+        logger.info(f"Користувач {update.effective_user.id} скасував реєстрацію на етапі введення номера телефону")
+        await cancel(update, context)
+        return ConversationHandler.END
+
+    if not re.match(PHONE_PATTERN, user_input):
+        logger.warning(f"Користувач {update.effective_user.id} ввів некоректний номер телефону: {user_input}")
+        error_message = await update.message.reply_text(ERROR_MESSAGES['phone_format'])
+        await asyncio.sleep(3)
+        await error_message.delete()
+        return PHONE
+
+    # Нормалізація номера телефону
+    if user_input.startswith('0'):
+        normalized_phone = '+38' + user_input
+    elif user_input.startswith('380'):
+        normalized_phone = '+' + user_input
+    else:
+        normalized_phone = user_input
+
+    context.user_data['phone'] = normalized_phone
+
+    keyboard = [
+        [
+            InlineKeyboardButton("Копірайтинг ✍️", callback_data="copywriting"),
+            InlineKeyboardButton("Відео монтаж 🎥", callback_data="video"),
+        ],
+        [
+            InlineKeyboardButton("Дизайнер 🎨", callback_data="design"),
+            InlineKeyboardButton("Фотограф 📸", callback_data="photo")
+        ],
+        [InlineKeyboardButton("Завершити вибір ✅", callback_data="done")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    message = await update.message.reply_text(
+        "Оберіть, що вам більше подобається (можна обрати декілька варіантів), \n\n"
+        "Щоб скасувати вибір натисніть на напрямок ще раз:",
+        reply_markup=reply_markup
+    )
+    logger.info(f"Відправлено клавіатуру з напрямками користувачу {update.effective_user.id}")
+
+    context.user_data['message_id'] = message.message_id
+    context.user_data['employment_types'] = []
+
     return EMPLOYMENT
-
-
 
 @check_spam_decorator
 async def handle_employment_choice(update: Update, context: CallbackContext) -> int:
@@ -387,6 +421,7 @@ async def handle_employment_choice(update: Update, context: CallbackContext) -> 
                         'full_name': full_name,
                         'birthday': context.user_data.get('birthday'),
                         'group': group,
+                        'phone': context.user_data.get('phone'),
                         'role': 'учасник комісії',
                         'type_of_employment': employment_types
                     }},
@@ -459,6 +494,7 @@ def get_registration_handler():
             SURNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_surname)],
             BIRTHDAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_birthday)],
             GROUP: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_group)],
+            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
             EMPLOYMENT: [CallbackQueryHandler(handle_employment_choice)],
         },
         fallbacks=[CommandHandler('cancel', cancel)],

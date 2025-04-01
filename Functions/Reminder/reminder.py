@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, Application, CommandHandler, ContextTypes
 from telegram import Bot
 from telegram import Update
-import asyncio
 from datetime import datetime, time
 import traceback
 import pymongo

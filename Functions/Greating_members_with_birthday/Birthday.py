@@ -26,7 +26,7 @@ class BirthdayGreeter:
 
         # Налаштування Gemini
         genai.configure(api_key=gemini_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-2.0-flash')
 
         logger.info("BirthdayGreeter успішно ініціалізовано")
 

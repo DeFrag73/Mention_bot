@@ -26,5 +26,5 @@ class CustomFormatter(logging.Formatter):
 handler = logging.StreamHandler()
 handler.setFormatter(CustomFormatter())
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Встановлюємо рівень INFO для відображення успішних запитів
+logger.setLevel(logging.INFO)
 logger.addHandler(handler)
