@@ -104,6 +104,8 @@ class TaskNotification:
         query = update.callback_query
         action, row_idx = query.data.split('_')
         user = query.from_user
+        worksheet_data = self.sheet.get_all_records()
+        task_data = worksheet_data[int(row_idx) - 2]
 
         logger.info(f"Отримано запит від користувача: {user.id}")
 
@@ -136,7 +138,8 @@ class TaskNotification:
         admin_message = (
             f"Користувач {user.full_name} (@{user.username}) "
             f"хоче взятися за {'дизайн' if action == 'design' else 'текст'}\n"
-            f"Завдання з рядка {row_idx}"
+            f"Завдання з рядка {row_idx}\n"
+            f"Опис завдання: {task_data['Завдання для поста']}"
         )
 
         try:
