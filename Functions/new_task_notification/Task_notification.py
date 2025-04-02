@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import nullcontext
 from typing import Dict, List, Optional
 import os
 from datetime import datetime
@@ -130,12 +131,18 @@ class TaskNotification:
             return
 
         # Надсилаємо повідомлення користувачу про очікування
-        waiting_message = await context.bot.send_message(
-            chat_id=user.id,
-            text="⏳ Ваш запит надіслано адміністратору. Очікуйте на рішення."
-        )
-
-        logger.debug(f"Відправлено повідомлення про очікування: {waiting_message.message_id}")
+        try:
+            await query.answer(
+                show_alert=True,
+                text="⏳ Ваш запит надіслано адміністратору. Очікуйте на рішення."
+            )
+        except telegram.error.Forbidden:
+            await query.answer(
+                "❗ Будь ласка, спочатку активуйте бота в приватних повідомленнях, "
+                "щоб отримувати сповіщення",
+                show_alert=True
+            )
+            return
 
         admin_message = (
             f"Користувач {user.full_name} (@{user.username}) "
@@ -191,16 +198,6 @@ class TaskNotification:
                 result_message = await context.bot.send_message(
                     chat_id=user_id,
                     text="✅ Ваш запит схвалено!" if decision == "confirm" else "❌ Ваш запит відхилено"
-                )
-
-                # Встановлюємо таймер на видалення повідомлення
-                context.job_queue.run_once(
-                    self.delete_message,
-                    20,  # 20 секунд
-                    data={
-                        'chat_id': user_id,
-                        'message_id': result_message.message_id
-                    }
                 )
 
         except Exception as e:
