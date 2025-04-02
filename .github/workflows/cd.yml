@@ -1,0 +1,38 @@
+name: CD - Deploy to Server
+
+on:
+  workflow_run:
+    workflows: ["Telegram Bot CI"]
+    types:
+      - completed
+    branches:
+      - main
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Налаштування SSH
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+    - name: Налаштування SSH конфігурації
+      run: |
+        mkdir -p ~/.ssh
+        echo "Host ${{ secrets.SERVER_IP }}
+          StrictHostKeyChecking no
+          UserKnownHostsFile=/dev/null
+          " > ~/.ssh/config
+
+    - name: Розгортання на сервері
+      run: |
+        ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} '
+          cd /mentionBot/Mention_bot/ &&
+          git pull origin main &&
+          docker-compose down &&
+          docker-compose up --build -d &&
+          docker system prune -f
+        '
