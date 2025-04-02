@@ -2,7 +2,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import os
 from dotenv import load_dotenv
-from telegram.ext import ApplicationBuilder, Application, CommandHandler, ContextTypes
+from telegram.ext import Application, ContextTypes
 from telegram import Bot
 from telegram import Update
 from datetime import datetime, time
