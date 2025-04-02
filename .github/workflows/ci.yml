@@ -10,6 +10,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+
     steps:
     - uses: actions/checkout@v3
 
@@ -17,9 +20,18 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.12'
+        cache: 'pip'
 
     - name: Встановлення залежностей
       run: |
         python -m pip install --upgrade pip
-        pip install flake8 pytest
+        pip install flake8 pytest pytest-cov
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Перевірка стилю коду
+      run: |
+        flake8 . --count --max-line-length=100 --statistics --exclude=venv/,tests/
+
+    - name: Запуск тестів
+      run: |
+        pytest tests/test_mention_bot.py -v --cov=./ --cov-report=term-missing

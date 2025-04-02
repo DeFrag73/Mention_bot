@@ -94,7 +94,8 @@ async def mention_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 mentions.append(f"@{user['username']}")
             elif user.get('first_name') or user.get('last_name'):
                 full_name = f"{safe_name(user.get('first_name', ''))} {safe_name(user.get('last_name', ''))}".strip()
-                mentions.append(f"[{full_name}](tg://user?id={user['user_id']})" if full_name else f"[Користувач](tg://user?id={user['user_id']})")
+                mentions.append(f"[{full_name}](tg://user?id={user['user_id']})"
+                                if full_name else f"[Користувач](tg://user?id={user['user_id']})")
             else:
                 mentions.append(f"[Користувач](tg://user?id={user['user_id']})")
 

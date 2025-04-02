@@ -120,7 +120,8 @@ class BirthdayGreeter:
     async def birthday_check_loop(self, bot: Bot):
         """Запускає цикл перевірки днів народження"""
         logger.info(
-            f"Запуск циклу перевірки з налаштуваннями: TIMEZONE={TIMEZONE}, CHECK_HOUR={CHECK_HOUR}, CHECK_MINUTE={CHECK_MINUTE}")
+            f"Запуск циклу перевірки з налаштуваннями: TIMEZONE={TIMEZONE}, CHECK_HOUR={CHECK_HOUR}, "
+            f"CHECK_MINUTE={CHECK_MINUTE}")
 
         # Початкова перевірка при запуску
         now = datetime.now(TIMEZONE)

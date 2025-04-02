@@ -344,7 +344,8 @@ class GroupCreationManager:
             await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
             return SELECT_USERS
 
-    async def _delete_creation_messages(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> None:
+    async def _delete_creation_messages(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int,
+                                        user_id: int) -> None:
         """Видаляє всі повідомлення, пов'язані з процесом створення групи"""
         if user_id in user_data_dict and 'messages_to_delete' in user_data_dict[user_id]:
             for message_id in user_data_dict[user_id]['messages_to_delete']:
