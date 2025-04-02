@@ -33,19 +33,31 @@ def check_spam_decorator(func):
 
 def admin_only(func):
     @functools.wraps(func)
-    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+    async def wrapper(*args, **kwargs):
+        # Визначаємо, чи це метод класу чи звичайна функція
+        if len(args) >= 2 and isinstance(args[1], Update):
+            # Це метод класу (self, update, context, ...)
+            update = args[1]
+            context = args[2]
+        elif len(args) >= 1 and isinstance(args[0], Update):
+            # Це звичайна функція (update, context, ...)
+            update = args[0]
+            context = args[1]
+        else:
+            logger.error("Неправильні аргументи для декоратора admin_only")
+            return
+
         if not update.effective_user:
             await update.message.reply_text("Користувача не знайдено.")
             return
 
-        # Отримуємо admin_id з .env
         admin_id = int(os.getenv('ADMIN_ID'))
 
         if update.effective_user.id != admin_id:
             await update.message.reply_text("Ця команда доступна тільки адміністратору.")
             return
 
-        return await func(update, context, *args, **kwargs)
+        return await func(*args, **kwargs)
 
     return wrapper
 

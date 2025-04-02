@@ -31,6 +31,7 @@ class TaskNotification:
 
     async def check_and_send_tasks(self, context: CallbackContext) -> None:
         await self.cleanup_completed_tasks()
+        logger.info("Перевірка чи є нові завдання")
         try:
             expected_headers = [
                 'Завдання для поста',
@@ -54,6 +55,7 @@ class TaskNotification:
 
                 # Якщо завдання не існує і статус "не розпочато"
                 if not existing_task and row['Статус поста'].lower() == 'не розпочато':
+                    logger.info(f"Нове завдання: {row['Завдання для поста']}")
                     buttons = []
 
                     if row['Тип посту'].lower() in ['storis', 'reels']:
@@ -107,7 +109,7 @@ class TaskNotification:
         worksheet_data = self.sheet.get_all_records()
         task_data = worksheet_data[int(row_idx) - 2]
 
-        logger.info(f"Отримано запит від користувача: {user.id}")
+        logger.info(f"Отримано запит від користувача: {user.id} {user.username}")
 
         # Спочатку перевіряємо чи є користувач в базі
         member = self.users_collection.find_one({
@@ -354,6 +356,12 @@ class TaskNotification:
 
         await message.reply_text(thread_info)
 
+    @admin_only
+    async def push_tasks(self, update: Update, context: CallbackContext) -> None:
+        """Команда для миттєвого сканування нових завдань"""
+        await self.check_and_send_tasks(context)
+        await update.message.reply_text("✅ Сканування завдань виконано")
+
     def register_handlers(self, application):
         """Реєстрація обробників подій"""
         application.add_handler(CallbackQueryHandler(
@@ -363,3 +371,4 @@ class TaskNotification:
             self.handle_admin_decision,
             pattern='^(confirm|reject)_'))
         application.add_handler(CommandHandler('thread_info', self.get_thread_info))
+        application.add_handler(CommandHandler('push_task', self.push_tasks))
