@@ -1,5 +1,5 @@
 import datetime
-from telegram import Update
+from telegram import Update, ChatMemberAdministrator
 from telegram.ext import ContextTypes, CommandHandler
 from telethon import TelegramClient
 from pymongo import MongoClient, UpdateOne
@@ -31,19 +31,19 @@ async def init_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # # Перевірка прав адміністратора
-    # try:
-    #     bot_member = await bot.get_chat_member(chat_id, bot.id)
-    #     if not isinstance(bot_member, ChatMemberAdministrator):
-    #         await update.message.reply_text(
-    #             "❗ Для коректної роботи бот повинен бути адміністратором групи.\n"
-    #             "Будь ласка, надайте боту права адміністратора та спробуйте знову. /init"
-    #         )
-    #         return False
-    # except Exception as e:
-    #     logger.error(f"Помилка при перевірці прав адміністратора: {e}")
-    #     await update.message.reply_text("❌ Помилка при перевірці прав бота.")
-    #     return False
+    # Перевірка прав адміністратора
+    try:
+        bot_member = await bot.get_chat_member(chat_id, bot.id)
+        if not isinstance(bot_member, ChatMemberAdministrator):
+            await update.message.reply_text(
+                "❗ Для коректної роботи бот повинен бути адміністратором групи.\n"
+                "Будь ласка, надайте боту права адміністратора та спробуйте знову. /init"
+            )
+            return False
+    except Exception as e:
+        logger.error(f"Помилка при перевірці прав адміністратора: {e}")
+        await update.message.reply_text("❌ Помилка при перевірці прав бота.")
+        return False
 
     # Ініціалізація клієнтів
     client = TelegramClient('session_name', API_ID, API_HASH)

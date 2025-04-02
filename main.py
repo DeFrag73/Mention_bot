@@ -123,7 +123,7 @@ def main():
         for handler in handlers:
             app.add_handler(handler)
 
-        task_notification = TaskNotification() # /thread_info
+        task_notification = TaskNotification() # /thread_info /push_task
         task_notification.register_handlers(app)
 
         # Налаштування періодичної перевірки завдань

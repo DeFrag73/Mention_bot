@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import nullcontext
 from typing import Dict, List, Optional
 import os
 from datetime import datetime
@@ -31,6 +32,7 @@ class TaskNotification:
 
     async def check_and_send_tasks(self, context: CallbackContext) -> None:
         await self.cleanup_completed_tasks()
+        logger.info("Перевірка чи є нові завдання")
         try:
             expected_headers = [
                 'Завдання для поста',
@@ -54,6 +56,7 @@ class TaskNotification:
 
                 # Якщо завдання не існує і статус "не розпочато"
                 if not existing_task and row['Статус поста'].lower() == 'не розпочато':
+                    logger.info(f"Нове завдання: {row['Завдання для поста']}")
                     buttons = []
 
                     if row['Тип посту'].lower() in ['storis', 'reels']:
@@ -107,7 +110,7 @@ class TaskNotification:
         worksheet_data = self.sheet.get_all_records()
         task_data = worksheet_data[int(row_idx) - 2]
 
-        logger.info(f"Отримано запит від користувача: {user.id}")
+        logger.info(f"Отримано запит від користувача: {user.id} {user.username}")
 
         # Спочатку перевіряємо чи є користувач в базі
         member = self.users_collection.find_one({
@@ -128,12 +131,18 @@ class TaskNotification:
             return
 
         # Надсилаємо повідомлення користувачу про очікування
-        waiting_message = await context.bot.send_message(
-            chat_id=user.id,
-            text="⏳ Ваш запит надіслано адміністратору. Очікуйте на рішення."
-        )
-
-        logger.debug(f"Відправлено повідомлення про очікування: {waiting_message.message_id}")
+        try:
+            await query.answer(
+                show_alert=True,
+                text="⏳ Ваш запит надіслано адміністратору. Очікуйте на рішення."
+            )
+        except telegram.error.Forbidden:
+            await query.answer(
+                "❗ Будь ласка, спочатку активуйте бота в приватних повідомленнях, "
+                "щоб отримувати сповіщення",
+                show_alert=True
+            )
+            return
 
         admin_message = (
             f"Користувач {user.full_name} (@{user.username}) "
@@ -189,16 +198,6 @@ class TaskNotification:
                 result_message = await context.bot.send_message(
                     chat_id=user_id,
                     text="✅ Ваш запит схвалено!" if decision == "confirm" else "❌ Ваш запит відхилено"
-                )
-
-                # Встановлюємо таймер на видалення повідомлення
-                context.job_queue.run_once(
-                    self.delete_message,
-                    20,  # 20 секунд
-                    data={
-                        'chat_id': user_id,
-                        'message_id': result_message.message_id
-                    }
                 )
 
         except Exception as e:
@@ -354,6 +353,12 @@ class TaskNotification:
 
         await message.reply_text(thread_info)
 
+    @admin_only
+    async def push_tasks(self, update: Update, context: CallbackContext) -> None:
+        """Команда для миттєвого сканування нових завдань"""
+        await self.check_and_send_tasks(context)
+        await update.message.reply_text("✅ Сканування завдань виконано")
+
     def register_handlers(self, application):
         """Реєстрація обробників подій"""
         application.add_handler(CallbackQueryHandler(
@@ -363,3 +368,4 @@ class TaskNotification:
             self.handle_admin_decision,
             pattern='^(confirm|reject)_'))
         application.add_handler(CommandHandler('thread_info', self.get_thread_info))
+        application.add_handler(CommandHandler('push_task', self.push_tasks))
