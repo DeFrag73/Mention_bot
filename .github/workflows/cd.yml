@@ -32,7 +32,7 @@ jobs:
         ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} '
           cd /mentionBot/Mention_bot/ &&
           git pull origin main &&
-          docker-compose down &&
-          docker-compose up --build -d &&
+          docker compose down &&
+          docker compose up --build -d &&
           docker system prune -f
         '
