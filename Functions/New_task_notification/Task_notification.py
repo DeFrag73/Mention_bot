@@ -127,7 +127,7 @@ class TaskNotification:
                 "🔄 Будь ласка, перереєструйтеся, використовуючи команду /registration"
             )
             await context.bot.send_message(chat_id=user.id, text=notification_message)
-            await query.answer("Необхідна перереєстрація")
+            await query.answer("Необхідна перереєстрація перейдіть до бота")
             return
 
         # Надсилаємо повідомлення користувачу про очікування

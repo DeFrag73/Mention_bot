@@ -15,7 +15,7 @@ from Functions.Mention_all.mention_all import get_mention_handler, react_to_new_
 from Functions.Reminder.reminder import setup_reminder_functionality
 from Functions.Anti_spam.antispam_handlers import SpamHandlers, check_spam_decorator
 from Functions.Greating_members_with_birthday.Birthday import setup_birthday_handler
-from Functions.new_task_notification.Task_notification import TaskNotification
+from Functions.New_task_notification.Task_notification import TaskNotification
 from Functions.Making_groups_of_peoples.Making_Group import get_group_creation_handler
 from  Functions.Logger.Logger_config import logger
 
