@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, time
 import asyncio
 from typing import Optional, List, Dict
 import pytz
@@ -18,6 +18,7 @@ CHECK_MINUTE = 0
 
 
 class BirthdayGreeter:
+    """Клас для привітання учасників комісії з днем народження"""
     def __init__(self, mongo_uri: str, database_name: str, gemini_key: str, work_group_id: str):
         self.client = MongoClient(mongo_uri)
         self.db = self.client[database_name]
@@ -119,28 +120,68 @@ class BirthdayGreeter:
 
     async def birthday_check_loop(self, bot: Bot):
         """Запускає цикл перевірки днів народження"""
-        logger.info(
-            f"Запуск циклу перевірки з налаштуваннями: TIMEZONE={TIMEZONE}, CHECK_HOUR={CHECK_HOUR}, "
-            f"CHECK_MINUTE={CHECK_MINUTE}")
+        logger.info(f"Запуск циклу перевірки з налаштуваннями: TIMEZONE={TIMEZONE}, CHECK_HOUR={CHECK_HOUR}")
 
-        # Початкова перевірка при запуску
+        # Виводимо поточний час на початку роботи
         now = datetime.now(TIMEZONE)
-        if now.hour >= CHECK_HOUR and now.minute >= CHECK_MINUTE:
-            await self.send_birthday_greetings(bot)
+        logger.info(f"Поточний час на початку циклу: {now} (Година: {now.hour}, Хвилина: {now.minute})")
+        logger.info(f"Цільовий час перевірки: {CHECK_HOUR}:{CHECK_MINUTE}")
+
+        # Зберігаємо дату останнього привітання
+        last_greetings_date = None
 
         while True:
             try:
                 now = datetime.now(TIMEZONE)
-                if now.hour == CHECK_HOUR and now.minute == CHECK_MINUTE:
+                today_date = now.date()
+
+                # Виводимо поточний час у кожній ітерації
+                logger.info(f"Поточний час: {now} (Година: {now.hour}, Хвилина: {now.minute})")
+
+                # Надсилаємо привітання, якщо зараз потрібний час і ми ще не вітали сьогодні
+                if (now.hour == CHECK_HOUR and
+                        now.minute >= CHECK_MINUTE and
+                        last_greetings_date != today_date):
+
+                    logger.info(f"Умова виконана! Час для привітань: {now}")
                     await self.send_birthday_greetings(bot)
-                    # Чекаємо 23 години 59 хвилин перед наступною перевіркою
-                    await asyncio.sleep(23 * 60 * 60 + 59 * 60)
+                    last_greetings_date = today_date
+                    logger.info(f"Привітання надіслані {now}. Наступна перевірка завтра.")
+
+                    # Розраховуємо час до наступної перевірки (до завтра)
+                    tomorrow = (now + timedelta(days=1)).replace(
+                        hour=CHECK_HOUR, minute=CHECK_MINUTE, second=0)
+                    seconds_until_tomorrow = (tomorrow - now).total_seconds()
+                    logger.info(f"Наступна перевірка через {seconds_until_tomorrow / 3600:.1f} годин")
+                    await asyncio.sleep(seconds_until_tomorrow)
                 else:
-                    # Чекаємо 1 хвилину перед наступною перевіркою
-                    await asyncio.sleep(60)
+                    # Виводимо причину чому умова не виконана
+                    if now.hour != CHECK_HOUR:
+                        logger.info(f"Умова не виконана: поточна година {now.hour} != {CHECK_HOUR}")
+                    elif now.minute < CHECK_MINUTE:
+                        logger.info(f"Умова не виконана: поточна хвилина {now.minute} < {CHECK_MINUTE}")
+                    elif last_greetings_date == today_date:
+                        logger.info(f"Умова не виконана: привітання вже надіслані сьогодні")
+
+                    # Розраховуємо час до наступної перевірки
+                    if now.hour < CHECK_HOUR or (now.hour == CHECK_HOUR and now.minute < CHECK_MINUTE):
+                        # Сьогодні ще не було перевірки
+                        next_check = now.replace(hour=CHECK_HOUR, minute=CHECK_MINUTE, second=0)
+                        logger.info(f"Наступна перевірка сьогодні о {CHECK_HOUR}:{CHECK_MINUTE}")
+                    else:
+                        # Перевірка сьогодні вже була або час минув, чекаємо до завтра
+                        tomorrow = (now + timedelta(days=1))
+                        next_check = tomorrow.replace(hour=CHECK_HOUR, minute=CHECK_MINUTE, second=0)
+                        logger.info(f"Наступна перевірка завтра о {CHECK_HOUR}:{CHECK_MINUTE}")
+
+                    wait_seconds = (next_check - now).total_seconds()
+                    wait_seconds = max(60, min(wait_seconds, 3600))  # Чекаємо від 1 хв до 1 години
+                    logger.info(f"Очікуємо наступну перевірку. Сон на {wait_seconds / 60:.1f} хвилин")
+                    await asyncio.sleep(wait_seconds)
+
             except Exception as e:
                 logger.error(f"Помилка в циклі перевірки: {str(e)}")
-                await asyncio.sleep(60)
+                await asyncio.sleep(300)  # Чекаємо 5 хвилин при помилці
 
 
 @admin_only
@@ -181,6 +222,11 @@ async def test_birthday_command(update, context):
 
 
 def setup_birthday_handler(application: Application, config: dict) -> None:
+    # Додаємо вивід поточного часу на початку налаштування
+    now = datetime.now(TIMEZONE)
+    logger.info(f"Налаштування системи привітань. Поточний час: {now} (Година: {now.hour}, Хвилина: {now.minute})")
+    logger.info(f"Система буде перевіряти іменинників о {CHECK_HOUR}:{CHECK_MINUTE}")
+
     required_config = ['MONGODB_URI', 'DATABASE_NAME', 'GEMINI_API_KEY', 'WORK_GROUP_ID']
     for param in required_config:
         if param not in config:
@@ -197,12 +243,11 @@ def setup_birthday_handler(application: Application, config: dict) -> None:
         application.bot_data['birthday_greeter'] = birthday_greeter
         application.add_handler(CommandHandler('test_birthday', test_birthday_command))
 
-        # Використовуємо job_queue для запуску циклу перевірки
-        application.job_queue.run_once(
-            lambda context: context.application.create_task(
-                birthday_greeter.birthday_check_loop(context.application.bot)
-            ),
-            when=0  # запускаємо одразу
+        # Запускаємо щоденну перевірку в певний час (можна залишити, якщо потрібно)
+        application.job_queue.run_daily(
+            test_birthday_command,
+            time=time(hour=CHECK_HOUR, minute=CHECK_MINUTE),
+            days=(0, 1, 2, 3, 4, 5, 6)
         )
 
         logger.info("Система привітань успішно налаштована")
