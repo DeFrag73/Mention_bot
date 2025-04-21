@@ -130,6 +130,18 @@ class TaskNotification:
             await query.answer("Необхідна перереєстрація перейдіть до бота")
             return
 
+        # Створюємо унікальний ключ для цього користувача і завдання
+        request_key = f"{user.id}_{row_idx}_{action}"
+
+        # Перевіряємо, чи вже є запит від цього користувача на це завдання
+        if request_key in self.pending_messages:
+            # Користувач вже відправив запит, показуємо повідомлення
+            await query.answer(
+                show_alert=True,
+                text="⚠️ Ви вже відправили запит на це завдання. Очікуйте відповіді адміністратора."
+            )
+            return
+
         # Надсилаємо повідомлення користувачу про очікування
         try:
             await query.answer(
@@ -143,6 +155,17 @@ class TaskNotification:
                 show_alert=True
             )
             return
+
+        # Надсилаємо повідомлення користувачу про очікування і зберігаємо його ID
+        try:
+            user_notification = await context.bot.send_message(
+                chat_id=user.id,
+                text="⏳ Ваш запит надіслано адміністратору. Очікуйте на рішення."
+            )
+            # Зберігаємо ID повідомлення для можливого оновлення
+            self.pending_messages[request_key] = user_notification.message_id
+        except Exception as e:
+            logger.error(f"Помилка при відправці повідомлення користувачу: {e}")
 
         admin_message = (
             f"Користувач {user.full_name} (@{user.username}) "
