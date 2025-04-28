@@ -59,3 +59,4 @@ AWS
 start_bot_info.bat
 stop_bot_info.bat
 requirements.txt
+Functions/Mention_all/emoji_list_to_mongo_migration.py
