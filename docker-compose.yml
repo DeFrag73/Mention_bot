@@ -6,6 +6,6 @@ services:
     env_file:
       - .env
     volumes:
-      - ./:/mentionBot:rw  # додаємо явні права на запис
+      - ./:/mentionBot:rw
     restart: always
     user: root

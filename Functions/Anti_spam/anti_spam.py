@@ -13,7 +13,7 @@ DB_NAME = os.getenv('MONGO_DATABASE')
 
 
 class AntiSpam:
-    def __init__(self, mongodb_uri: str, messages_limit=5, time_window=5, ban_time=30):
+    def __init__(self, mongodb_uri: str, messages_limit=2, time_window=2, ban_time=30):
         # Підключення до MongoDB
         self.client = MongoClient(mongodb_uri)
         self.db = self.client[DB_NAME]
@@ -25,7 +25,7 @@ class AntiSpam:
         self.messages_limit = messages_limit
         self.time_window = time_window
         self.ban_time = ban_time
-        self.max_warnings = 3
+        self.max_warnings = 1
 
         # Завантаження даних з бази
         self.load_data()

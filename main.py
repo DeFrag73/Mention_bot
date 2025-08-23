@@ -118,7 +118,7 @@ def main():
 
         # Додаємо handlers для груп окремо
         group_handlers = get_group_creation_handler() # /mention_group /create_user_group /
-        handlers.extend(group_handlers)  # розширюємо список handlers
+        handlers.extend(group_handlers)
 
         for handler in handlers:
             app.add_handler(handler)

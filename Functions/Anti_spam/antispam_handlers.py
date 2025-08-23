@@ -15,8 +15,9 @@ load_dotenv()
 
 def check_spam_decorator(func):
     @functools.wraps(func)
-    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
-        if not update.effective_user:
+    async def wrapper(update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        # Перевіряємо, чи є update об'єктом Update або має атрибут effective_user
+        if not hasattr(update, 'effective_user'):
             return await func(update, context, *args, **kwargs)
 
         # Отримуємо обробник спаму зі словника bot_data

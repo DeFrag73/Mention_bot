@@ -8,7 +8,7 @@ import telegram
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 
-from Functions.Anti_spam.antispam_handlers import admin_only
+from Functions.Anti_spam.antispam_handlers import admin_only, check_spam_decorator
 from Functions.Reminder.reminder import connect_to_sheet, connect_to_mongo
 from Functions.Logger.Logger_config import logger
 
@@ -363,6 +363,8 @@ class TaskNotification:
         except Exception as e:
             logger.error(f"Помилка при очищенні бази даних: {e}")
 
+    @check_spam_decorator
+    @admin_only
     async def get_thread_info(self, update: Update, context: CallbackContext) -> None:
         """Команда для отримання інформації про гілку"""
         message = update.message
@@ -376,6 +378,7 @@ class TaskNotification:
 
         await message.reply_text(thread_info)
 
+    @check_spam_decorator
     @admin_only
     async def push_tasks(self, update: Update, context: CallbackContext) -> None:
         """Команда для миттєвого сканування нових завдань"""
