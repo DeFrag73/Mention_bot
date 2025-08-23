@@ -3,6 +3,7 @@ from contextlib import nullcontext
 from typing import Dict, List, Optional
 import os
 from datetime import datetime
+import traceback
 
 import telegram
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -31,165 +32,145 @@ class TaskNotification:
         self.sheet = connect_to_sheet()
 
     async def check_and_send_tasks(self, context: CallbackContext) -> None:
-        await self.cleanup_completed_tasks()
-        logger.info("Перевірка чи є нові завдання")
+        """
+        Перевіряє нові завдання і надсилає повідомлення.
+        Ця функція може бути викликана за розкладом або вручну.
+        """
         try:
-            expected_headers = [
-                'Завдання для поста',
-                'Дата події',
-                'Тип посту',
-                'Дед-лайн',
-                'Статус поста',
-                'Картинка',
-                'о',
-                'Текст',
-                'к',
-                'Фото-закріп',
-                'Текст-закріп'
-            ]
+            # Перевірка наявності контексту з ботом
+            if context is None or context.bot is None:
+                logger.error("Відсутній контекст бота при виклику check_and_send_tasks")
+                return
 
-            records = self.sheet.get_all_records(expected_headers=expected_headers)
+            # Отримуємо всі рядки таблиці
+            all_rows = self.sheet.get_all_values()
+            header_row = all_rows[0]
 
-            for idx, row in enumerate(records, start=2):
-                # Перевіряємо чи існує вже завдання з таким row_index
-                existing_task = self.task_messages.find_one({'row_index': idx})
+            # Визначаємо індекси колонок
+            id_idx = header_row.index('ID')
+            task_title_idx = header_row.index('Завдання для поста')
+            status_idx = header_row.index('Статус задачі')
+            deadline_idx = header_row.index('Дед-лайн')
+            subtask_idx = header_row.index('Задача')
 
-                # Якщо завдання не існує і статус "не розпочато"
-                if not existing_task and row['Статус поста'].lower() == 'не розпочато':
-                    logger.info(f"Нове завдання: {row['Завдання для поста']}")
-                    buttons = []
+            logger.info("Початок перевірки на нові завдання")
 
-                    if row['Тип посту'].lower() in ['storis', 'reels']:
-                        buttons.append([InlineKeyboardButton(
-                            "Взятися за дизайн",
-                            callback_data=f"design_{idx}")])
-                    else:
-                        buttons.extend([
-                            [InlineKeyboardButton(
-                                "Взятися за дизайн",
-                                callback_data=f"design_{idx}")],
-                            [InlineKeyboardButton(
-                                "Взятися за текст",
-                                callback_data=f"text_{idx}")]
-                        ])
+            # Групуємо завдання за ID
+            tasks_by_id = {}
+            for i, row in enumerate(all_rows[1:], start=2):  # Починаємо з 2, бо рядок 1 - це заголовки
+                row_idx = i
+                if row[id_idx] and row[status_idx] == "Не розпочато":
+                    task_id = row[id_idx]
+                    if task_id not in tasks_by_id:
+                        tasks_by_id[task_id] = {
+                            'title': row[task_title_idx],
+                            'deadline': row[deadline_idx],
+                            'subtasks': []
+                        }
 
-                    keyboard = InlineKeyboardMarkup(buttons)
-
-                    message_text = (
-                        f"📋 Нове завдання:\n\n"
-                        f"Завдання: {row['Завдання для поста']}\n"
-                        f"Тип посту: {row['Тип посту']}\n"
-                        f"Дедлайн: {row['Дед-лайн']}"
-                    )
-
-                    message = await context.bot.send_message(
-                        chat_id=self.INFO_CHAT_ID,
-                        message_thread_id=int(self.THREAD_ID),
-                        text=message_text,
-                        reply_markup=keyboard
-                    )
-
-                    # Зберігаємо інформацію про нове повідомлення
-                    self.task_messages.insert_one({
-                        'message_id': message.message_id,
-                        'message_thread_id': self.THREAD_ID,
-                        'row_index': idx,
-                        'type': row['Тип посту'],
-                        'designer': None,
-                        'writer': None,
-                        'created_at': datetime.now()
+                    tasks_by_id[task_id]['subtasks'].append({
+                        'text': row[subtask_idx],
+                        'row_idx': row_idx
                     })
 
+            # Надсилаємо повідомлення для кожного унікального ID завдання
+            for task_id, task_info in tasks_by_id.items():
+                if task_info['subtasks']:  # Якщо є підзадачі зі статусом "не розпочато"
+                    buttons = []
+                    for subtask in task_info['subtasks']:
+                        buttons.append([InlineKeyboardButton(
+                            subtask['text'],
+                            callback_data=f"task_{subtask['row_idx']}"
+                        )])
+
+                    # Формуємо повідомлення
+                    message_text = f"📝 *{task_info['title']}*\n\n"
+                    message_text += f"⏰ *Дед-лайн:* {task_info['deadline']}\n\n"
+                    message_text += "Доступні завдання:"
+
+                    # Надсилаємо повідомлення в чат
+                    message = await context.bot.send_message(
+                        chat_id=self.INFO_CHAT_ID,
+                        text=message_text,
+                        parse_mode='Markdown',
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
+
+                    # Зберігаємо інформацію про повідомлення в MongoDB
+                    self.task_messages.insert_one({
+                        'task_id': task_id,
+                        'message_id': message.message_id,
+                        'subtasks': task_info['subtasks']
+                    })
+
+
         except Exception as e:
-            logger.error(f"Помилка при перевірці завдань: {e}")
+            logger.error(f"Помилка при перевірці та надсиланні завдань: {e}")
+            logger.error(traceback.format_exc())
 
     async def handle_task_button(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query
-        action, row_idx = query.data.split('_')
-        user = query.from_user
-        worksheet_data = self.sheet.get_all_records()
-        task_data = worksheet_data[int(row_idx) - 2]
-
-        logger.info(f"Отримано запит від користувача: {user.id} {user.username}")
-
-        # Спочатку перевіряємо чи є користувач в базі
-        member = self.users_collection.find_one({
-            "username": {"$regex": f"^{user.username}$", "$options": "i"}
-        })
-
-        if not member:
-            notification_message = (
-                "⚠️ Вас не знайдено в базі даних системи сповіщень!\n\n"
-                "Можливі причини:\n"
-                "• Ви змінили свій нікнейм в Telegram\n"
-                "• Ви змінили ім'я користувача\n"
-                "• Ви ще не зареєстровані в системі\n\n"
-                "🔄 Будь ласка, перереєструйтеся, використовуючи команду /registration"
-            )
-            await context.bot.send_message(chat_id=user.id, text=notification_message)
-            await query.answer("Необхідна перереєстрація перейдіть до бота")
-            return
-
-        # Створюємо унікальний ключ для цього користувача і завдання
-        request_key = f"{user.id}_{row_idx}_{action}"
-
-        # Перевіряємо, чи вже є запит від цього користувача на це завдання
-        if request_key in self.pending_messages:
-            # Користувач вже відправив запит, показуємо повідомлення
-            await query.answer(
-                show_alert=True,
-                text="⚠️ Ви вже відправили запит на це завдання. Очікуйте відповіді адміністратора."
-            )
-            return
-
-        # Надсилаємо повідомлення користувачу про очікування
-        try:
-            await query.answer(
-                show_alert=True,
-                text="⏳ Ваш запит надіслано адміністратору. Очікуйте на рішення."
-            )
-        except telegram.error.Forbidden:
-            await query.answer(
-                "❗ Будь ласка, спочатку активуйте бота в приватних повідомленнях, "
-                "щоб отримувати сповіщення",
-                show_alert=True
-            )
-            return
-
-        # Надсилаємо повідомлення користувачу про очікування і зберігаємо його ID
-        try:
-            user_notification = await context.bot.send_message(
-                chat_id=user.id,
-                text="⏳ Ваш запит надіслано адміністратору. Очікуйте на рішення."
-            )
-            # Зберігаємо ID повідомлення для можливого оновлення
-            self.pending_messages[request_key] = user_notification.message_id
-        except Exception as e:
-            logger.error(f"Помилка при відправці повідомлення користувачу: {e}")
-
-        admin_message = (
-            f"Користувач {user.full_name} (@{user.username}) "
-            f"хоче взятися за {'дизайн' if action == 'design' else 'текст'}\n"
-            f"Завдання з рядка {row_idx}\n"
-            f"Опис завдання: {task_data['Завдання для поста']}"
-        )
+        action, row_idx = query.data.split('_', 1)
 
         try:
-            admin_msg = await context.bot.send_message(
+            # Отримуємо інформацію про користувача
+            user = update.effective_user
+            username = user.username
+            user_id = user.id
+
+            # Перевіряємо, чи користувач є в базі даних
+            member = self.users_collection.find_one({"user_id": user_id})
+            if not member:
+                await query.answer("Ви не зареєстровані. Будь ласка, зверніться до адміністратора.")
+                return
+
+            # Отримуємо інформацію про завдання
+            row_idx = int(row_idx)
+            row = self.sheet.row_values(row_idx)
+            header_row = self.sheet.row_values(1)
+
+            task_title_idx = header_row.index('Завдання для поста') + 1
+            subtask_idx = header_row.index('Задача') + 1
+
+            task_title = self.sheet.cell(row_idx, task_title_idx).value
+            subtask = self.sheet.cell(row_idx, subtask_idx).value
+
+            # Надсилаємо запит адміністратору для підтвердження
+            admin_buttons = [
+                [
+                    InlineKeyboardButton("Підтвердити", callback_data=f"confirm_task_{row_idx}_{username}"),
+                    InlineKeyboardButton("Відхилити", callback_data=f"reject_task_{row_idx}_{username}")
+                ]
+            ]
+
+            admin_text = (
+                f"Користувач @{username} хоче взяти завдання:\n\n"
+                f"📝 *{task_title}*\n"
+                f"📌 *Задача:* {subtask}"
+            )
+
+            await context.bot.send_message(
                 chat_id=self.ADMIN_ID,
-                text=admin_message,
-                reply_markup=InlineKeyboardMarkup([
-                    [
-                        InlineKeyboardButton("✅ Підтвердити",
-                                             callback_data=f"confirm_{action}_{row_idx}_{user.username}"),
-                        InlineKeyboardButton("❌ Відхилити",
-                                             callback_data=f"reject_{action}_{row_idx}_{user.username}")
-                    ]
-                ])
+                text=admin_text,
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup(admin_buttons)
             )
-            logger.debug(f"Відправлено повідомлення адміну: {admin_msg.message_id}")
+
+            # Надсилаємо повідомлення користувачу про очікування
+            message = await context.bot.send_message(
+                chat_id=user_id,
+                text=f"⏳ Ваш запит на завдання відправлено адміністратору. Очікуйте підтвердження."
+            )
+
+            # Зберігаємо ID повідомлення для подальшого оновлення
+            message_key = f"{user_id}_{row_idx}_task"
+            self.pending_messages[message_key] = message.message_id
+
+            await query.answer("Запит надіслано адміністратору")
+
         except Exception as e:
-            logger.error(f"Помилка при відправці повідомлення адміну: {e}")
+            logger.error(f"Помилка при обробці кнопки завдання: {e}")
+            await query.answer("Сталася помилка. Спробуйте пізніше.")
 
     async def handle_admin_decision(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query
@@ -218,7 +199,7 @@ class TaskNotification:
                     del self.pending_messages[message_key]
 
                 # Надсилаємо нове повідомлення про рішення
-                result_message = await context.bot.send_message(
+                await context.bot.send_message(
                     chat_id=user_id,
                     text="✅ Ваш запит схвалено!" if decision == "confirm" else "❌ Ваш запит відхилено"
                 )
@@ -241,81 +222,50 @@ class TaskNotification:
 
                 # Оновлюємо Google Sheet
                 header_row = self.sheet.row_values(1)
-                картинка_col = header_row.index('Картинка') + 1
-                текст_col = header_row.index('Текст') + 1
-                статус_col = header_row.index('Статус поста') + 1
+                status_idx = header_row.index('Статус задачі') + 1
+                executor_idx = header_row.index('Виконавець') + 1
+
+                # Оновлюємо дані в таблиці
+                self.sheet.update_cell(int(row_idx), status_idx, 'Виконується')
+                self.sheet.update_cell(int(row_idx), executor_idx, full_name)
 
                 # Знаходимо повідомлення в MongoDB
-                task_message = self.task_messages.find_one({'row_index': int(row_idx)})
+                task_message = self.task_messages.find_one({'subtasks': {'$elemMatch': {'row_idx': int(row_idx)}}})
 
                 if task_message:
-                    update_data = {}
-                    if action == 'design':
-                        update_data['designer'] = username
-                        self.sheet.update_cell(int(row_idx), картинка_col, full_name)
-                    else:  # text
-                        update_data['writer'] = username
-                        self.sheet.update_cell(int(row_idx), текст_col, full_name)
+                    # Оновлюємо кнопки в повідомленні, видаляючи взяту задачу
+                    updated_subtasks = []
+                    for subtask in task_message['subtasks']:
+                        if subtask['row_idx'] != int(row_idx):
+                            updated_subtasks.append(subtask)
 
-                    # Оновлюємо запис в MongoDB
-                    self.task_messages.update_one(
-                        {'row_index': int(row_idx)},
-                        {'$set': update_data}
-                    )
+                    if updated_subtasks:
+                        # Є ще невзяті підзадачі, оновлюємо повідомлення
+                        buttons = []
+                        for subtask in updated_subtasks:
+                            buttons.append([InlineKeyboardButton(
+                                subtask['text'],
+                                callback_data=f"task_{subtask['row_idx']}"
+                            )])
 
-                    # Перевіряємо чи потрібно оновити повідомлення або видалити його
-                    updated_task = self.task_messages.find_one({'row_index': int(row_idx)})
+                        await context.bot.edit_message_reply_markup(
+                            chat_id=self.INFO_CHAT_ID,
+                            message_id=task_message['message_id'],
+                            reply_markup=InlineKeyboardMarkup(buttons)
+                        )
 
-                    try:
-                        if task_message['type'].lower() in ['storis', 'reels']:
-                            if updated_task.get('designer'):
-                                # Видаляємо повідомлення для stories/reels
-                                await context.bot.delete_message(
-                                    chat_id=self.INFO_CHAT_ID,
-                                    message_id=task_message['message_id']
-                                )
-                                self.task_messages.delete_one({'row_index': int(row_idx)})
-                        else:
-                            if updated_task.get('designer') and updated_task.get('writer'):
-                                # Видаляємо повідомлення, якщо обидві ролі заповнені
-                                try:
-                                    await asyncio.sleep(1)  # Затримка в 1 секунду
-                                    await context.bot.delete_message(
-                                        chat_id=self.INFO_CHAT_ID,
-                                        message_id=task_message['message_id']
-                                    )
-                                except telegram.error.BadRequest as e:
-                                    if "Message to delete not found" in str(e):
-                                        self.task_messages.delete_one({'row_index': int(row_idx)})
-                                        logger.warning(f"Повідомлення вже було видалено: {task_message['message_id']}")
-                                    else:
-                                        raise e
-                            else:
-                                # Оновлюємо кнопки
-                                buttons = []
-                                if not updated_task.get('designer'):
-                                    buttons.append([InlineKeyboardButton(
-                                        "Взятися за дизайн",
-                                        callback_data=f"design_{row_idx}"
-                                    )])
-                                if not updated_task.get('writer'):
-                                    buttons.append([InlineKeyboardButton(
-                                        "Взятися за текст",
-                                        callback_data=f"text_{row_idx}"
-                                    )])
-
-                                if buttons:
-                                    await context.bot.edit_message_reply_markup(
-                                        chat_id=self.INFO_CHAT_ID,
-                                        message_id=task_message['message_id'],
-                                        reply_markup=InlineKeyboardMarkup(buttons)
-                                    )
-
-                    except Exception as e:
-                        logger.error(f"Помилка при оновленні повідомлення: {e}")
-
-                # Оновлюємо статус в таблиці
-                self.sheet.update_cell(int(row_idx), статус_col, 'Виконується')
+                        # Оновлюємо запис в MongoDB
+                        self.task_messages.update_one(
+                            {'_id': task_message['_id']},
+                            {'$set': {'subtasks': updated_subtasks}}
+                        )
+                    else:
+                        # Всі підзадачі взяті, видаляємо повідомлення
+                        await context.bot.delete_message(
+                            chat_id=self.INFO_CHAT_ID,
+                            message_id=task_message['message_id']
+                        )
+                        self.task_messages.delete_one({'_id': task_message['_id']})
 
                 await query.answer("Успішно оновлено")
                 await self.cleanup_completed_tasks()
@@ -343,25 +293,34 @@ class TaskNotification:
             pass
 
     async def cleanup_completed_tasks(self):
-        """Функція для очищення бази даних від завершених завдань"""
-        try:
-            # Отримуємо всі записи з бази даних
-            all_tasks = list(self.task_messages.find())
+        """
+        Перевіряє, чи всі завдання для повідомлень вже розібрані,
+        і якщо так - видаляє їх з бази даних та з чату.
+        Викликається після рішення адміністратора.
+        """
+        # Отримуємо всі повідомлення з завданнями
+        all_tasks = list(self.task_messages.find())
 
-            for task in all_tasks:
-                # Перевіряємо чи всі учасники додані
-                if task['type'].lower() in ['storis', 'reels']:
-                    if task.get('designer'):
-                        # Для stories/reels потрібен тільки дизайнер
-                        self.task_messages.delete_one({'_id': task['_id']})
-                else:
-                    # Для інших типів потрібні обидва учасники
-                    if task.get('designer') and task.get('writer'):
-                        self.task_messages.delete_one({'_id': task['_id']})
+        for task_message in all_tasks:
+            message_id = task_message.get('message_id')
+            post_id = task_message.get('post_id')
+            tasks = task_message.get('tasks', [])
 
-            logger.info("Очищення бази даних завершено успішно")
-        except Exception as e:
-            logger.error(f"Помилка при очищенні бази даних: {e}")
+            # Перевіряємо, чи всі завдання мають підтверджених виконавців
+            all_tasks_assigned = all(task.get('assignee') is not None for task in tasks)
+
+            # Якщо всі завдання мають виконавців і список завдань не порожній
+            if all_tasks_assigned and tasks:
+                try:
+                    # Видаляємо повідомлення з чату
+                    await self.delete_message(message_id)
+                    logger.info(f"Видалено повідомлення {message_id} для поста {post_id}")
+                except Exception as e:
+                    logger.error(f"Не вдалося видалити повідомлення {message_id}: {e}")
+
+                # Видаляємо запис з бази даних
+                self.task_messages.delete_one({'_id': task_message['_id']})
+                logger.info(f"Видалено запис з бази даних для поста {post_id}")
 
     @check_spam_decorator
     @admin_only
@@ -386,12 +345,23 @@ class TaskNotification:
         await update.message.reply_text("✅ Сканування завдань виконано")
 
     def register_handlers(self, application):
-        """Реєстрація обробників подій"""
+        """
+        Реєструє обробники подій для Telegram бота.
+        Обробляє кнопки вибору завдань та адміністративних рішень.
+        """
+        # Обробка кнопок для вибору типу завдання (дизайн або текст)
         application.add_handler(CallbackQueryHandler(
             self.handle_task_button,
             pattern='^(design|text)_'))
+
+        # Обробка кнопок для підтвердження або відхилення заявок на завдання
         application.add_handler(CallbackQueryHandler(
             self.handle_admin_decision,
             pattern='^(confirm|reject)_'))
+
+        # Обробка команд для отримання інформації про треди та публікації завдань
         application.add_handler(CommandHandler('thread_info', self.get_thread_info))
         application.add_handler(CommandHandler('push_task', self.push_tasks))
+
+        logger.info("Зареєстровано обробники подій для сповіщень про завдання")
+
