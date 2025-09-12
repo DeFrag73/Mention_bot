@@ -134,7 +134,7 @@ def main():
         )
 
         # Налаштування додаткової функціональності
-        setup_reminder_functionality(app) # /check /test_reminder /test_message /set_daily_reminder
+        setup_reminder_functionality(app) # /check /test_reminder /test_message /set_daily_reminder /show_reminder_schedule
         app.add_handler(MessageHandler(filters.ALL, react_to_new_messages))
 
         logger.info("Всі обробники успішно встановлено")

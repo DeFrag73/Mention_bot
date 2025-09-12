@@ -10,6 +10,9 @@ import traceback
 import pymongo
 from Functions.Anti_spam.antispam_handlers import check_spam_decorator, admin_only
 from Functions.Logger.Logger_config import logger
+import pytz
+from datetime import datetime, time
+
 load_dotenv()
 
 CREDENTIALS_FILE = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
@@ -93,72 +96,117 @@ async def send_task_reminders(context=None, force_test=False):
         # Connect to MongoDB
         db, users_collection = connect_to_mongo()
 
-        # Get column indices
+        # Детальне логування для діагностики
+        logger.info(f"Отримано {len(all_values)} рядків з таблиці")
+        if all_values:
+            logger.info(f"Заголовки таблиці: {all_values[0]}")
+
+        # Get column indices for new table structure
         headers = all_values[0]
-        status_col = headers.index('Статус поста')
-        task_col = headers.index('Завдання для поста')
-        deadline_col = headers.index('Дед-лайн')
-        image_person_col = headers.index('Картинка')
-        text_person_col = headers.index('Текст')
-        image_active_col = image_person_col + 1
-        text_active_col = text_person_col + 1
+        try:
+            id_col = headers.index('ID')
+            task_title_col = headers.index('Завдання для поста')
+            status_col = headers.index('Статус задачі')
+            deadline_col = headers.index('Дед-лайн')
+            assignee_col = headers.index('Виконавець')
+            subtask_col = headers.index('Задача')
+            logger.info(
+                f"Індекси колонок: ID={id_col}, Title={task_title_col}, Status={status_col}, Deadline={deadline_col}, Assignee={assignee_col}, Subtask={subtask_col}")
+        except ValueError as e:
+            logger.error(f"Не вдалося знайти необхідні колонки в таблиці: {e}")
+            return
 
         today = datetime.now().strftime('%d.%m.%Y')
+        logger.info(f"Сьогоднішня дата для пошуку: {today}")
 
-        reminders = []
-        for row in all_values[1:]:
-            # If force_test is True, or row matches today's deadline
-            if (force_test and row[status_col] == 'Виконується' and row[deadline_col] == today or
-                    (row[status_col] == 'Виконується' and row[deadline_col] == today)):
+        reminders = {}  # Групуємо нагадування за ID завдання
 
-                reminder_text = f"🕒 Нагадування про завдання:\n\n"
-                reminder_text += f"📝 Завдання: {row[task_col]}\n"
-                reminder_text += f"🗓️ Дедлайн: {row[deadline_col]}\n"
+        for row_idx, row in enumerate(all_values[1:], start=2):
+            # Логування кожного рядка для діагностики
+            if len(row) > max(id_col, status_col, deadline_col, assignee_col):
+                row_id = row[id_col] if id_col < len(row) else ""
+                row_status = row[status_col] if status_col < len(row) else ""
+                row_deadline = row[deadline_col] if deadline_col < len(row) else ""
+                row_assignee = row[assignee_col] if assignee_col < len(row) else ""
 
-                performers = []
-                usernames = []
+                # Перевіряємо умови для нагадування - використовуємо "Виконується" замість "В роботі"
+                is_test_condition = force_test and row_status == 'Виконується' and row_deadline == today
+                is_regular_condition = not force_test and row_status == 'Виконується' and row_deadline == today
 
-                # Перевіряємо виконавця картинки
-                if row[image_person_col].strip():
-                    # Додаємо перевірку значення активності
-                    is_active = row[image_active_col].lower() != 'true'
-                    if is_active:
-                        performers.append(row[image_person_col])
+                if is_test_condition or is_regular_condition:
+                    logger.info(f"Знайдено завдання для нагадування в рядку {row_idx}")
 
-                # Перевіряємо виконавця тексту
-                if row[text_person_col].strip():
-                    # Додаємо перевірку значення активності
-                    is_active = row[text_active_col].lower() != 'true'
-                    if is_active:
-                        performers.append(row[text_person_col])
+                    task_id = row[id_col]
+                    task_title = row[task_title_col] if task_title_col < len(row) else ""
+                    deadline = row[deadline_col]
+                    assignee = row[assignee_col]
+                    subtask = row[subtask_col] if subtask_col < len(row) else ""
 
-                # Lookup usernames in MongoDB
-                for performer in performers:
-                    user = users_collection.find_one({'full_name': performer})
-                    if user and 'username' in user:
-                        usernames.append(f"@{user['username']}")
+                    # Якщо для цього завдання ще немає нагадування, створюємо його
+                    if task_id not in reminders:
+                        reminders[task_id] = {
+                            'title': task_title,
+                            'deadline': deadline,
+                            'subtasks': []
+                        }
 
-                # Add performers to reminder
-                if performers:
-                    reminder_text += f"👥 Виконавці: {', '.join(performers)}\n"
+                    # Додаємо підзавдання до нагадування
+                    if assignee.strip():  # Тільки якщо є призначений виконавець
+                        reminders[task_id]['subtasks'].append({
+                            'subtask': subtask,
+                            'assignee': assignee
+                        })
+                        logger.info(f"Додано підзавдання: '{subtask}' для '{assignee}'")
+            else:
+                logger.warning(f"Рядок {row_idx} має недостатньо колонок: {len(row)}")
 
-                # Add usernames if found
-                if usernames:
-                    reminder_text += f"💬 Usernames: {', '.join(usernames)}\n"
+        logger.info(f"Знайдено {len(reminders)} завдань для нагадування")
 
-                reminders.append(reminder_text)
-
+        # Формуємо та відправляємо нагадування
         if reminders:
             bot = Bot(token=TOKEN)
-            for reminder in reminders:
-                try:
-                    await bot.send_message(
-                        chat_id=INFO_CHAT_ID,
-                        text=reminder
-                    )
-                    logger.info(f"Sent reminder: {reminder[:50]}...")
-                except Exception as send_error:
-                    logger.error(f"Failed to send reminder: {send_error}")
+
+            for task_id, reminder_data in reminders.items():
+                if reminder_data['subtasks']:  # Тільки якщо є підзавдання з виконавцями
+                    reminder_text = f"🕒 Нагадування про завдання:\n\n"
+                    reminder_text += f"📝 Завдання: {reminder_data['title']}\n"
+                    reminder_text += f"🗓️ Дедлайн: {reminder_data['deadline']}\n\n"
+                    reminder_text += "👥 Виконавці та їх завдання:\n"
+
+                    usernames = []
+
+                    for subtask_data in reminder_data['subtasks']:
+                        assignee = subtask_data['assignee']
+                        subtask = subtask_data['subtask']
+
+                        reminder_text += f"• {subtask}: {assignee}\n"
+
+                        # Шукаємо username в MongoDB по повному імені
+                        if not assignee.startswith('@'):  # Якщо це повне ім'я, а не username
+                            user = users_collection.find_one({'full_name': assignee})
+                            if user and 'username' in user and user['username']:
+                                usernames.append(f"@{user['username']}")
+                                logger.info(f"Знайдено username для '{assignee}': @{user['username']}")
+                            else:
+                                logger.warning(f"Не знайдено username для користувача: '{assignee}'")
+                        else:
+                            # Якщо це вже username, додаємо як є
+                            usernames.append(assignee)
+
+                    # Додаємо usernames якщо знайдені
+                    if usernames:
+                        reminder_text += f"\n💬 Згадки: {', '.join(usernames)}"
+
+                    try:
+                        await bot.send_message(
+                            chat_id=INFO_CHAT_ID,
+                            text=reminder_text
+                        )
+                        logger.info(f"Sent reminder for task {task_id}: {reminder_data['title'][:50]}...")
+                    except Exception as send_error:
+                        logger.error(f"Failed to send reminder for task {task_id}: {send_error}")
+                else:
+                    logger.info(f"Пропускаємо завдання {task_id} - немає підзавдань з виконавцями")
         else:
             logger.info("No reminders to send")
 
@@ -171,43 +219,66 @@ async def send_task_reminders(context=None, force_test=False):
 async def set_daily_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Змінює час щоденного нагадування.
-    Використання: /set_daily_reminder ГГ:ХХ
-    Наприклад: /set_daily_reminder 18:00
+    Використання: /set_daily_reminder ГГ:ХХ [часовий_пояс]
+    Наприклад: /set_daily_reminder 18:00 Europe/Kyiv
+    Або просто: /set_daily_reminder 18:00 (використає Europe/Kyiv за замовчуванням)
     """
     try:
         # Перевіряємо чи надано аргумент з часом
         if not context.args:
             await update.message.reply_text(
                 "❌ Будь ласка, вкажіть час у форматі ГГ:ХХ\n"
-                "Наприклад: /set_daily_reminder 18:00"
+                "Наприклад: /set_daily_reminder 18:00\n"
+                "Або з часовим поясом: /set_daily_reminder 18:00 Europe/Kyiv"
             )
             return
 
         time_str = context.args[0]
 
+        # Визначаємо часовий пояс
+        timezone_str = context.args[1] if len(context.args) > 1 else 'Europe/Kyiv'
+
+        try:
+            # Перевіряємо правильність часового поясу
+            timezone = pytz.timezone(timezone_str)
+        except pytz.exceptions.UnknownTimeZoneError:
+            await update.message.reply_text(
+                f"❌ Невідомий часовий пояс: {timezone_str}\n"
+                "Використовуйте стандартні назви часових поясів, наприклад:\n"
+                "• Europe/Kyiv (Київський час)\n"
+                "• Europe/Moscow (Московський час)\n"
+                "• UTC (Координований всесвітній час)"
+            )
+            return
+
         # Перевіряємо правильність формату часу
         try:
             # Парсимо введений час
-            input_time = datetime.strptime(time_str, '%H:%M').time()
+            parsed_time = datetime.strptime(time_str, '%H:%M').time()
 
-            # Конвертуємо час (віднімаємо 2 години для узгодження часових поясів)
-            adjusted_hour = (input_time.hour - 2) % 24
-            adjusted_time = time(hour=adjusted_hour, minute=input_time.minute)
+            # Створюємо локалізований час
+            today = datetime.now().date()
+            naive_datetime = datetime.combine(today, parsed_time)
+            localized_time = timezone.localize(naive_datetime).time()
 
             # Видаляємо старі нагадування
             for job in context.job_queue.jobs():
-                job.schedule_removal()
+                if job.name == 'daily_reminder':
+                    job.schedule_removal()
 
             # Встановлюємо нове нагадування
             context.job_queue.run_daily(
                 send_task_reminders,
-                time=adjusted_time
+                time=localized_time,
+                name='daily_reminder'
             )
 
             await update.message.reply_text(
-                f"✅ Час нагадування успішно встановлено на {time_str}.\n"
-                f"(Системний час виконання: {adjusted_time.strftime('%H:%M')})"
+                f"✅ Час нагадування успішно встановлено на {time_str} ({timezone_str}).\n"
+                f"Нагадування буде надсилатися щодня о цьому часі за вказаним часовим поясом."
             )
+
+            logger.info(f"Встановлено щоденне нагадування на {time_str} в часовому поясі {timezone_str}")
 
         except ValueError:
             await update.message.reply_text(
@@ -220,25 +291,73 @@ async def set_daily_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.error(f"Помилка встановлення часу нагадування: {e}")
 
 
-# Функція для налаштування щоденного нагадування о 18:00
+# Оновлена функція для налаштування щоденного нагадування за замовчуванням
 def setup_daily_reminder(application):
-    # Створення джоба для щоденного нагадування о 18:00
-    application.job_queue.run_daily(
-        send_task_reminders,
-        time=datetime.strptime('16:00', '%H:%M').time()
-    )
+    """
+    Створення джоба для щоденного нагадування о 16:00 за київським часом
+    """
+    try:
+        # Використовуємо київський часовий пояс
+        kyiv_tz = pytz.timezone('Europe/Kyiv')
+
+        # Створюємо локалізований час
+        today = datetime.now().date()
+        naive_time = datetime.combine(today, time(hour=16, minute=0))
+        localized_time = kyiv_tz.localize(naive_time).time()
+
+        application.job_queue.run_daily(
+            send_task_reminders,
+            time=localized_time,
+            name='daily_reminder'
+        )
+
+        logger.info("Налаштовано щоденне нагадування на 16:00 київського часу")
+    except Exception as e:
+        logger.error(f"Помилка налаштування щоденного нагадування: {e}")
+
+
+@admin_only
+async def show_reminder_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Показує поточний розклад нагадувань
+    """
+    try:
+        daily_jobs = [job for job in context.job_queue.jobs() if job.name == 'daily_reminder']
+
+        if not daily_jobs:
+            await update.message.reply_text("❌ Щоденні нагадування не налаштовані")
+            return
+
+        job = daily_jobs[0]  # Беремо перше (повинно бути тільки одне)
+
+        if job.next_t:
+            next_run = job.next_t
+
+            await update.message.reply_text(
+                f"📅 Поточний розклад нагадувань:\n\n"
+                f"⏰ Час запуску: {next_run.strftime('%H:%M')}\n"
+                f"📆 Наступне нагадування: {next_run.strftime('%d.%m.%Y о %H:%M')}\n"
+                f"🔄 Повторення: щоденно"
+            )
+        else:
+            await update.message.reply_text("❌ Не вдалося отримати інформацію про розклад")
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Помилка: {str(e)}")
+        logger.error(f"Помилка отримання розкладу нагадувань: {e}")
+
 
 @admin_only
 async def test_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Manually trigger a test reminder"""
     try:
-        await update.message.reply_text("Generating test reminder...")
+        await update.message.reply_text("Генеруємо тестове нагадування...")
         await send_task_reminders(force_test=True)
-        await update.message.reply_text("Test reminder generation completed!")
+        await update.message.reply_text("Тестове нагадування відправлено!")
         logger.info("Manual test reminder triggered")
     except Exception as e:
         logger.error(f"Test reminder error: {e}")
-        await update.message.reply_text(f"Error generating test reminder: {e}")
+        await update.message.reply_text(f"Помилка генерації тестового нагадування: {e}")
 
 
 @admin_only
@@ -267,7 +386,8 @@ def setup_reminder_functionality(app):
         test_reminder,
         test_message,
         setup_daily_reminder,
-        set_daily_reminder
+        set_daily_reminder,
+        show_reminder_schedule
     )
     from telegram.ext import CommandHandler
 
@@ -276,6 +396,7 @@ def setup_reminder_functionality(app):
     app.add_handler(CommandHandler('test_reminder', test_reminder))
     app.add_handler(CommandHandler('test_message', test_message))
     app.add_handler(CommandHandler('set_daily_reminder', set_daily_reminder))
+    app.add_handler(CommandHandler('show_reminder_schedule', show_reminder_schedule))
 
     # Set up daily reminders
     setup_daily_reminder(app)
